@@ -1,24 +1,16 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
-
-import { useUser } from "@/hooks/use-user";
+import { getBackendSessionUser } from "@/services/backend/session";
 import { DEMO_MODE } from "@/utils/demo-mode";
-import { ROLE_HOME_PATH } from "@/utils/constants";
 
-export default function RootPage() {
-  const router = useRouter();
-  const { data: user, isLoading } = useUser();
+export default async function RootPage() {
+  if (DEMO_MODE) {
+    redirect("/fresher");
+  }
 
-  useEffect(() => {
-    if (DEMO_MODE) {
-      router.replace("/fresher");
-      return;
-    }
-    if (isLoading) return;
-    router.replace(user ? ROLE_HOME_PATH[user.profile.role] : "/login");
-  }, [isLoading, user, router]);
-
-  return null;
+  const user = await getBackendSessionUser();
+  if (!user) {
+    redirect("/login");
+  }
+  redirect(`/${user.role}`);
 }

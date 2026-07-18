@@ -3,46 +3,57 @@ import { usePathname } from "next/navigation";
 
 import { demoStore } from "@/mocks/demo-store";
 import { MOCK_FRESHER, MOCK_PM } from "@/mocks/fixtures";
-import { apiFetch, clearToken, getToken, setToken } from "@/services/api-client";
+import { apiFetch, ApiError } from "@/services/api-client";
+import { normalizeBackendUser, type BackendUserResponse } from "@/services/backend/types";
 import { DEMO_MODE } from "@/utils/demo-mode";
-import type { BackendAuthUser, BackendFresherProfile, UserProfile, UserRole } from "@/types/user";
+import type { UserProfile } from "@/types/user";
+
+interface BackendFresherProfile {
+  user_id: string;
+  target_role: string | null;
+  resume_summary: unknown | null;
+  interview_evaluation: unknown | null;
+  profile_metadata: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+}
+
+function textFromValue(value: unknown, preferredKey?: string): string | null {
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object" && preferredKey && typeof (value as Record<string, unknown>)[preferredKey] === "string") {
+    return (value as Record<string, unknown>)[preferredKey] as string;
+  }
+  return null;
+}
+
+function backendProfileToUserProfile(
+  user: { id: string; name: string; role: UserProfile["role"] },
+  profile?: BackendFresherProfile | null,
+): UserProfile {
+  const now = new Date().toISOString();
+  const targetRole = profile?.target_role ?? (user.role === "fresher" ? "AI Product Developer" : null);
+  return {
+    id: user.id,
+    organization_id: null,
+    full_name: user.name,
+    avatar_url: null,
+    role: user.role,
+    pm_id: null,
+    job_title: targetRole,
+    target_role: targetRole,
+    gitlab_token: null,
+    // Repository details are not persisted by the v2 backend yet.
+    gitlab_repo_url: null,
+    resume_text: textFromValue(profile?.resume_summary, "resume_text"),
+    interview_notes: textFromValue(profile?.interview_evaluation, "overall"),
+    created_at: profile?.created_at ?? now,
+    updated_at: profile?.updated_at ?? now,
+  };
+}
 
 function demoPersonaForPath(pathname: string): UserProfile {
   const persona = pathname.startsWith("/pm") ? MOCK_PM : MOCK_FRESHER;
   return demoStore.users.find((u) => u.id === persona.id) ?? persona;
-}
-
-function backendProfileToUserProfile(user: BackendAuthUser, profile: BackendFresherProfile | null): UserProfile {
-  const metadata = profile?.profile_metadata ?? {};
-  return {
-    id: profile?.id ?? user.id,
-    organization_id: null,
-    full_name: user.name,
-    avatar_url: null,
-    role: user.role.toLowerCase() as UserRole,
-    pm_id: null,
-    job_title: typeof metadata.job_title === "string" ? metadata.job_title : null,
-    target_role: profile?.target_role ?? null,
-    gitlab_token: typeof metadata.gitlab_token === "string" ? metadata.gitlab_token : null,
-    gitlab_repo_url: typeof metadata.gitlab_repo_url === "string" ? metadata.gitlab_repo_url : null,
-    resume_text: typeof profile?.resume_summary === "string" ? profile.resume_summary : null,
-    interview_notes: typeof profile?.interview_evaluation === "string" ? profile.interview_evaluation : null,
-    created_at: profile?.created_at ?? new Date().toISOString(),
-    updated_at: profile?.updated_at ?? new Date().toISOString(),
-  };
-}
-
-export async function login(email: string, password: string) {
-  const data = await apiFetch<{ access_token: string; user: BackendAuthUser }>("/api/auth/login", {
-    method: "POST",
-    body: JSON.stringify({ email, password }),
-  });
-  setToken(data.access_token);
-  return data.user;
-}
-
-export function logout() {
-  clearToken();
 }
 
 export function useCurrentUser() {
@@ -56,26 +67,42 @@ export function useCurrentUser() {
         return { authId: profile.id, email: `${profile.role}.demo@skillproof.ai`, profile };
       }
 
-      if (!getToken()) return null;
-
-      const user = await apiFetch<BackendAuthUser>("/api/auth/me");
-      const profile =
-        user.role === "FRESHER" ? await apiFetch<BackendFresherProfile>("/api/freshers/me/profile") : null;
-
-      return { authId: user.id, email: user.email, profile: backendProfileToUserProfile(user, profile) };
+      try {
+        const rawUser = await apiFetch<BackendUserResponse>("/api/auth/me");
+        const user = normalizeBackendUser(rawUser);
+        if (!user) throw new Error("The backend returned an unsupported user role");
+        const profile = user.role === "fresher"
+          ? await apiFetch<BackendFresherProfile>("/api/freshers/me/profile")
+          : null;
+        return {
+          authId: user.id,
+          email: user.email,
+          profile: backendProfileToUserProfile(user, profile),
+        };
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 401) return null;
+        throw error;
+      }
     },
   });
 }
 
-function invalidateProfileQueries(queryClient: ReturnType<typeof useQueryClient>) {
-  queryClient.invalidateQueries({ queryKey: ["current-user"], refetchType: "all" });
-}
-
+/**
+ * Updates the fresher's profile. The v2 backend stores the target role plus
+ * resume/interview evaluation JSON; repository details and avatar are not
+ * persisted. Accepts either `target_role` or `job_title` in `updates` (both
+ * map to the backend's target_role column).
+ */
 export function useUpdateUserProfile() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (input: { id: string; updates: Partial<UserProfile> }) => {
+    mutationFn: async (input: {
+      id: string;
+      updates: Partial<UserProfile>;
+      resumeSummary?: unknown;
+      interviewEvaluation?: unknown;
+    }) => {
       if (DEMO_MODE) {
         const idx = demoStore.users.findIndex((u) => u.id === input.id);
         if (idx !== -1) {
@@ -84,30 +111,17 @@ export function useUpdateUserProfile() {
         return;
       }
 
-      // Merge with the cached current profile so a partial update (e.g. onboarding
-      // only sending resume/notes) doesn't blank out unrelated profile_metadata
-      // fields — PATCH replaces profile_metadata wholesale, not a deep merge.
-      const cached = queryClient
-        .getQueriesData<{ profile: UserProfile } | null>({ queryKey: ["current-user"] })
-        .map(([, data]) => data)
-        .find((data): data is { profile: UserProfile } => !!data);
-      const current = cached?.profile;
-      const merged = { ...current, ...input.updates };
-
-      await apiFetch<BackendFresherProfile>("/api/freshers/me/profile", {
+      await apiFetch("/api/freshers/me/profile", {
         method: "PATCH",
         body: JSON.stringify({
-          target_role: merged.target_role ?? null,
-          resume_summary: merged.resume_text ?? null,
-          interview_evaluation: merged.interview_notes ?? null,
-          profile_metadata: {
-            job_title: merged.job_title ?? null,
-            gitlab_token: merged.gitlab_token ?? null,
-            gitlab_repo_url: merged.gitlab_repo_url ?? null,
-          },
+          target_role: input.updates.target_role ?? input.updates.job_title ?? "AI Product Developer",
+          resume_summary: input.resumeSummary ?? (input.updates.resume_text ? { resume_text: input.updates.resume_text } : null),
+          interview_evaluation: input.interviewEvaluation ?? (input.updates.interview_notes ? { overall: input.updates.interview_notes } : null),
         }),
       });
     },
-    onSuccess: () => invalidateProfileQueries(queryClient),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["current-user"], refetchType: "all" });
+    },
   });
 }

@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { z } from "zod";
 
 import { Button } from "@/components/ui/button";
+import { validateInternalRedirectPath } from "@/services/validation/skillflow";
 import {
   Form,
   FormControl,
@@ -17,9 +18,6 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { ApiError } from "@/services/api-client";
-import { login } from "@/services/queries/users";
-import { ROLE_HOME_PATH } from "@/utils/constants";
 import type { UserRole } from "@/types/user";
 
 const loginSchema = z.object({
@@ -32,7 +30,7 @@ type LoginValues = z.infer<typeof loginSchema>;
 export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectTo = searchParams.get("redirect") ?? undefined;
+  const redirectTo = validateInternalRedirectPath(searchParams.get("redirect")) ?? undefined;
 
   const form = useForm<LoginValues>({
     resolver: zodResolver(loginSchema),
@@ -40,14 +38,24 @@ export function LoginForm() {
   });
 
   const onSubmit = async (values: LoginValues) => {
-    try {
-      const user = await login(values.email, values.password);
-      const role = user.role.toLowerCase() as UserRole;
-      router.replace(redirectTo ?? ROLE_HOME_PATH[role]);
-      router.refresh();
-    } catch (error) {
-      toast.error(error instanceof ApiError ? error.message : "Sign in failed");
+    const response = await fetch("/api/session/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(values),
+    });
+    const body = await response.json().catch(() => ({})) as {
+      detail?: string;
+      user?: { role: UserRole };
+    };
+
+    if (!response.ok || !body.user) {
+      toast.error(body.detail ?? "Unable to sign in");
+      return;
     }
+
+    const destination = redirectTo ?? `/${body.user.role}`;
+    router.replace(destination);
+    router.refresh();
   };
 
   return (
@@ -86,6 +94,7 @@ export function LoginForm() {
           </Button>
         </form>
       </Form>
+
     </div>
   );
 }

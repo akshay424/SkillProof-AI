@@ -1,8 +1,8 @@
-import { completeJSON, hasOpenAIKey } from "@/services/ai/openai-client";
+import { completeJSON } from "@/services/ai/openai-client";
+import type { ResumeReaderResult } from "@/services/ai/resume-reader-agent";
 import { DEMO_MODE } from "@/utils/demo-mode";
 import { generateUUID } from "@/utils/uuid";
 import type { AdaptiveRoadmapPayload, DiagnosticTask, FirstDayRoadmapPayload, RoadmapPayload } from "@/types/roadmap";
-import type { ResumeReaderOutput } from "@/types/resume";
 import type { FinalEvaluationOutput } from "@/types/evaluation";
 
 /** Task IDs are client-assigned, not part of the AI's own output — the real
@@ -15,65 +15,8 @@ function withTaskId(task: DiagnosticTask): DiagnosticTask {
 
 // Implements Mode A — First Day Diagnostic from agents/roadmap-creator.md: a
 // diagnostic roadmap (not an appraisal) for a fresher with no task history yet.
-// Selects 1-3 foundation competencies to verify from the Resume Reader's
-// roadmap_inputs and interview notes, and produces small, clear diagnostic tasks.
-const SYSTEM_PROMPT = `You are the Roadmap Creator Agent operating in Mode A — First Day Diagnostic.
-Use this mode only for a fresher with no previous task history. This is a diagnostic roadmap, not an
-appraisal: resume skills are unverified claims, not facts to be scored. Compare claimed resume skills
-with the target role's required competencies, identify matched claims, missing required skills, and
-high-risk unverified claims. Select only 1-3 foundation competencies to verify first. Create small,
-clear, employee-facing diagnostic tasks with enough context, sample input, resources, and acceptance
-criteria for a fresher to start immediately. Estimate effort in minutes. Do not label the employee weak
-for lacking first-day evidence. Never generate a roadmap solely from resume keywords.
-Set generation_mode="diagnostic" and pace_status="no_evidence".
-Respond with strict JSON matching this exact shape, no prose outside JSON:
-{
-  "employee_id": string,
-  "employee_name": string,
-  "department": string,
-  "role": string,
-  "employee_type": "fresher",
-  "generation_mode": "diagnostic",
-  "pace_status": "no_evidence",
-  "confidence": number (0-1),
-  "first_day_summary": string,
-  "claimed_skills_note": "Resume skills are unverified claims.",
-  "claimed_vs_required_skill_analysis": {
-    "matched_claimed_skills": string[],
-    "missing_required_skills": string[],
-    "high_risk_unverified_claims": string[],
-    "first_skills_to_verify": string[]
-  },
-  "first_day_roadmap": {
-    "goal": string,
-    "tasks": [
-      {
-        "task_id": string,
-        "task_title": string,
-        "task_description": string,
-        "employee_facing_instruction": string,
-        "focus_competency": string,
-        "difficulty": "beginner"|"intermediate"|"advanced",
-        "estimated_effort_minutes": number,
-        "estimated_span_days": number,
-        "can_complete_less_than_one_day": boolean,
-        "is_multi_day_task": boolean,
-        "checkpoints": [{ "checkpoint": string, "expected_output": string, "estimated_effort_minutes": number }],
-        "sample_input": object,
-        "expected_output": string,
-        "required_resources": [{ "type": string, "name": string, "url": string, "method": string, "endpoint": string, "headers": object, "request_body": object, "response_body": object, "content": object, "purpose": string }],
-        "missing_resources": string[],
-        "resource_strategy": string,
-        "acceptance_criteria": string[],
-        "evaluation_criteria": string[],
-        "reason_for_task": string
-      }
-    ]
-  },
-  "after_submission_plan": { "if_performs_well": string, "if_partially_correct": string, "if_struggles": string, "if_no_submission": string, "if_absent": string },
-  "manager_dashboard_summary": { "status": string, "message": string, "mentor_action": string, "evidence_to_collect": string[] }
-}`;
-
+// The full output contract lives server-side in /api/ai/complete under the
+// "roadmap_creator" operation.
 const DEMO_TASK: DiagnosticTask = {
   task_id: "",
   task_title: "Build a Login Screen",
@@ -167,20 +110,23 @@ export async function runRoadmapCreatorAgent(input: {
   employeeId: string;
   employeeName: string;
   targetRole: string;
-  resumeReader: ResumeReaderOutput;
+  resumeReader: ResumeReaderResult;
   interviewNotes: string;
 }): Promise<FirstDayRoadmapPayload> {
-  if (DEMO_MODE || !hasOpenAIKey()) {
+  if (DEMO_MODE) {
     return withTaskIds({ ...DEMO_ROADMAP_PAYLOAD, employee_id: input.employeeId, employee_name: input.employeeName });
   }
 
-  const user = `Employee: ${input.employeeName} (id: ${input.employeeId})
-Target role: ${input.targetRole}
-Employee type: fresher
-Resume Reader output: ${JSON.stringify(input.resumeReader)}
-Interview evaluation notes: ${input.interviewNotes}`;
+  const user = JSON.stringify({
+    employee_id: input.employeeId,
+    employee_name: input.employeeName,
+    target_role: input.targetRole,
+    employee_type: "fresher",
+    resume_reader_result: input.resumeReader,
+    interview_evaluation: input.interviewNotes,
+  });
 
-  const result = await completeJSON<FirstDayRoadmapPayload>(SYSTEM_PROMPT, user);
+  const result = await completeJSON<FirstDayRoadmapPayload>("roadmap_creator", user);
   return withTaskIds(result);
 }
 
@@ -189,44 +135,7 @@ Interview evaluation notes: ${input.interviewNotes}`;
 // strengths, and create exactly one next task the fresher can complete in the
 // planned time window. Produces a new roadmap version (the backend has no
 // endpoint to edit roadmap_payload in place — advancement is always a new POST).
-const MODE_B_SYSTEM_PROMPT = `You are the Roadmap Creator Agent operating in Mode B — After Evaluation.
-Use the highest-priority gap from the completed roadmap task's Final Evaluation Report. Preserve
-demonstrated strengths and increase challenge gradually. Do not punish the employee for skills outside the
-evaluated task. Create exactly one next task that can be completed in the planned time window. Defer
-unrelated skills rather than labeling them as weaknesses. Set generation_mode="adaptive" and
-roadmap_type="competency_gated_growth". The current_task must contain enough context for the employee to
-begin without a manager explanation — same fields as a diagnostic task.
-Respond with strict JSON matching this exact shape, no prose outside JSON:
-{
-  "employee_id": string, "employee_name": string, "department": string, "role": string, "employee_type": string,
-  "generation_mode": "adaptive",
-  "pace_status": "paused"|"behind"|"needs_support"|"on_track"|"ahead",
-  "roadmap_type": "competency_gated_growth",
-  "roadmap_summary": string,
-  "duration_plan": { "selected_duration_weeks": number, "min_duration_weeks": number, "max_duration_weeks": number, "duration_reason": string },
-  "task_time_policy": { "available_work_time_per_day_minutes": number, "min_task_duration_minutes": number, "max_task_span_days": number, "planning_logic": string },
-  "attendance_handling": { "attendance_status": string, "skill_score_changed": boolean, "roadmap_paused": boolean, "reason": string, "resume_task_strategy": string },
-  "confidence": number (0-1),
-  "claimed_skills_note": string,
-  "verified_skill_basis": string[],
-  "primary_weak_areas": string[],
-  "mentor_review_required": boolean,
-  "mentor_review_reason": string,
-  "competency_track": [{ "competency": string, "current_status": string, "target_status": string, "priority": string, "evidence": string[] }],
-  "roadmap": [{ "week": number, "week_goal": string, "main_competency": string, "practical_output": string, "tasks": string[], "move_forward_condition": string, "repeat_condition": string, "fast_track_condition": string, "mentor_checkpoint": string }],
-  "current_task": {
-    "task_id": string, "task_title": string, "task_description": string, "employee_facing_instruction": string, "focus_competency": string,
-    "difficulty": "beginner"|"intermediate"|"advanced", "estimated_effort_minutes": number, "estimated_span_days": number,
-    "can_complete_less_than_one_day": boolean, "is_multi_day_task": boolean,
-    "checkpoints": [{ "checkpoint": string, "expected_output": string, "estimated_effort_minutes": number }],
-    "sample_input": object, "expected_output": string,
-    "required_resources": [{ "type": string, "name": string, "url": string, "method": string, "endpoint": string, "headers": object, "request_body": object, "response_body": object, "content": object, "purpose": string }],
-    "missing_resources": string[], "resource_strategy": string, "acceptance_criteria": string[], "evaluation_criteria": string[], "reason_for_task": string
-  },
-  "next_task_strategy": { "if_score_below_40": string, "if_score_40_to_69": string, "if_score_70_to_84": string, "if_score_above_85": string, "if_no_submission": string, "if_history_missing": string, "if_repeated_weakness": string, "if_absent_or_on_leave": string, "if_required_resource_missing": string, "if_task_completed_early": string, "if_task_takes_longer_than_expected": string },
-  "manager_dashboard_summary": { "strongest_skill": string, "current_gap": string, "suggested_next_task": string, "suggested_mentor_action": string, "evidence_to_show": string[] }
-}`;
-
+// The full output contract lives server-side under "roadmap_creator_adaptive".
 function buildDemoAdaptivePayload(
   employeeId: string,
   employeeName: string,
@@ -340,16 +249,19 @@ export async function runRoadmapCreatorAgentModeB(input: {
   previousPayload: RoadmapPayload;
   finalEvaluation: FinalEvaluationOutput;
 }): Promise<AdaptiveRoadmapPayload> {
-  if (DEMO_MODE || !hasOpenAIKey()) {
+  if (DEMO_MODE) {
     const payload = buildDemoAdaptivePayload(input.employeeId, input.employeeName, input.targetRole, input.finalEvaluation);
     return { ...payload, current_task: withTaskId(payload.current_task) };
   }
 
-  const user = `Employee: ${input.employeeName} (id: ${input.employeeId})
-Target role: ${input.targetRole}
-Previous roadmap payload: ${JSON.stringify(input.previousPayload)}
-Final Evaluation Report for the just-completed task: ${JSON.stringify(input.finalEvaluation)}`;
+  const user = JSON.stringify({
+    employee_id: input.employeeId,
+    employee_name: input.employeeName,
+    target_role: input.targetRole,
+    previous_roadmap_payload: input.previousPayload,
+    final_evaluation_report: input.finalEvaluation,
+  });
 
-  const result = await completeJSON<AdaptiveRoadmapPayload>(MODE_B_SYSTEM_PROMPT, user);
+  const result = await completeJSON<AdaptiveRoadmapPayload>("roadmap_creator_adaptive", user);
   return { ...result, current_task: withTaskId(result.current_task) };
 }

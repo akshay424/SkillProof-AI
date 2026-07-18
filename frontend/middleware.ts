@@ -1,8 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-// Auth is a bearer JWT held in localStorage (from the real SkillFlow API), not a
-// cookie session, so middleware can't inspect or refresh it server-side. Route
-// protection happens client-side instead — see components/shared/role-guard.tsx.
+// Auth is an HttpOnly cookie session (see services/backend/session.ts). Route
+// protection is enforced server-side inside each route group's layout via
+// getBackendSessionUser(), so middleware is a passthrough.
 export function middleware(_request: NextRequest) {
   return NextResponse.next();
 }

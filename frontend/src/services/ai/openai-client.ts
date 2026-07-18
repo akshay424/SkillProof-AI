@@ -1,49 +1,45 @@
-import OpenAI from "openai";
+export type AiOperation =
+  | "resume_reader"
+  | "roadmap_creator"
+  | "roadmap_creator_adaptive"
+  | "work_evaluation"
+  | "question_generator"
+  | "final_evaluation"
+  | "weekly_evaluation"
+  | "roadmap_completion"
+  | "resume_transcription";
 
 /**
- * Calls OpenAI directly from the browser — no backend proxy. This means
- * NEXT_PUBLIC_OPENAI_API_KEY is shipped in the client bundle and readable by
- * anyone who opens devtools. Accepted as a known, explicit tradeoff for this
- * phase; do not use a production/unrestricted key here.
+ * Calls the same-origin AI proxy (`/api/ai/complete`). The OpenAI key and the
+ * system prompts both live server-side, keyed by `operation` — the client never
+ * ships the key and cannot inject a prompt. `_clientPrompt` is accepted for
+ * call-site readability only and is intentionally ignored by the server.
  */
-let client: OpenAI | null = null;
-
-export function hasOpenAIKey(): boolean {
-  return !!process.env.NEXT_PUBLIC_OPENAI_API_KEY;
-}
-
-export function getOpenAIClient(): OpenAI {
-  const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY;
-  if (!apiKey) {
-    throw new Error(
-      "NEXT_PUBLIC_OPENAI_API_KEY is not set. Add it to frontend/.env.local to use AI features.",
-    );
-  }
-
-  if (!client) {
-    client = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
-  }
-  return client;
-}
-
-export const DEFAULT_MODEL = "gpt-4o";
-
-export async function completeJSON<T>(system: string, user: string): Promise<T> {
-  const openai = getOpenAIClient();
-  const response = await openai.chat.completions.create({
-    model: DEFAULT_MODEL,
-    temperature: 0.4,
-    response_format: { type: "json_object" },
-    messages: [
-      { role: "system", content: system },
-      { role: "user", content: user },
-    ],
+export async function completeJSON<T>(
+  operation: Exclude<AiOperation, "resume_transcription">,
+  user: string,
+  _clientPrompt?: string,
+): Promise<T> {
+  void _clientPrompt;
+  const response = await fetch("/api/ai/complete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ operation, user, json: true }),
   });
+  const body = await response.json().catch(() => ({})) as { content?: string; detail?: string };
+  if (!response.ok) throw new Error(body.detail ?? "AI request failed");
+  if (!body.content) throw new Error("AI returned an empty response");
+  return JSON.parse(body.content) as T;
+}
 
-  const content = response.choices[0]?.message?.content;
-  if (!content) {
-    throw new Error("OpenAI returned an empty response.");
-  }
-
-  return JSON.parse(content) as T;
+export async function completeVision(user: string, imageDataUrl: string): Promise<string> {
+  const response = await fetch("/api/ai/complete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ operation: "resume_transcription", user, imageDataUrl }),
+  });
+  const body = await response.json().catch(() => ({})) as { content?: string; detail?: string };
+  if (!response.ok) throw new Error(body.detail ?? "AI vision request failed");
+  if (!body.content) throw new Error("AI returned an empty response");
+  return body.content;
 }

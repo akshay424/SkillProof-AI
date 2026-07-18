@@ -8,12 +8,13 @@ import { toast } from "sonner";
 import { GlassCard } from "@/components/shared/glass-card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { runResumeReaderAgent } from "@/services/ai/resume-reader-agent";
+import { readResume } from "@/services/ai/resume-reader-agent";
 import { runRoadmapCreatorAgent } from "@/services/ai/roadmap-creator-agent";
 import { extractResumeTextFromImage, fileToDataUrl } from "@/services/ai/resume-vision";
 import { extractTextFromPdf } from "@/services/pdf/extract-text";
 import { useCreateRoadmapFromAgent } from "@/services/queries/roadmaps";
 import { useUpdateUserProfile } from "@/services/queries/users";
+import { validateResumeFile, validateRoadmapRequest } from "@/services/validation/skillflow";
 import type { UserProfile } from "@/types/user";
 
 const DEFAULT_TARGET_ROLE = "AI Product Developer";
@@ -31,12 +32,20 @@ export function OnboardingCard({ authId, profile }: { authId: string; profile: U
   const onDrop = useCallback(async (files: File[]) => {
     const file = files[0];
     if (!file) return;
+    const validationMessage = validateResumeFile(file);
+    if (validationMessage) {
+      toast.error(validationMessage);
+      return;
+    }
 
     setParsing(true);
     try {
       const text = file.type === "application/pdf"
         ? await extractTextFromPdf(file)
         : await extractResumeTextFromImage(await fileToDataUrl(file));
+      if (text.trim().length < 80) {
+        throw new Error("We could not read enough resume content. Upload a clearer file or use a text-based PDF.");
+      }
       setResumeText(text);
       setResumeFileName(file.name);
       toast.success("Resume parsed");
@@ -58,6 +67,11 @@ export function OnboardingCard({ authId, profile }: { authId: string; profile: U
   const targetRole = profile.target_role ?? DEFAULT_TARGET_ROLE;
 
   const handleGenerate = async () => {
+    const validationMessage = validateRoadmapRequest(resumeText, interviewNotes);
+    if (validationMessage) {
+      toast.error(validationMessage);
+      return;
+    }
     setGenerating(true);
     try {
       await updateProfile.mutateAsync({
@@ -65,7 +79,11 @@ export function OnboardingCard({ authId, profile }: { authId: string; profile: U
         updates: { resume_text: resumeText, interview_notes: interviewNotes, target_role: targetRole },
       });
 
-      const resumeReader = await runResumeReaderAgent(resumeText);
+      const resumeReader = await readResume(resumeText, {
+        employeeId: authId,
+        employeeName: profile.full_name ?? "Fresher",
+        employeeType: "fresher",
+      });
       const payload = await runRoadmapCreatorAgent({
         employeeId: authId,
         employeeName: profile.full_name ?? "Fresher",
@@ -73,6 +91,10 @@ export function OnboardingCard({ authId, profile }: { authId: string; profile: U
         resumeReader,
         interviewNotes,
       });
+
+      if (!payload.current_task?.task_title) {
+        throw new Error("AI returned an incomplete roadmap. Please try again.");
+      }
 
       await createRoadmap.mutateAsync({
         userId: authId,
@@ -151,6 +173,11 @@ export function OnboardingCard({ authId, profile }: { authId: string; profile: U
           </>
         )}
       </Button>
+      {!canGenerate && (
+        <p className="text-center text-xs text-muted-foreground">
+          Add your resume and interview notes to enable roadmap generation.
+        </p>
+      )}
     </GlassCard>
   );
 }

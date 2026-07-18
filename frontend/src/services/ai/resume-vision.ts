@@ -1,4 +1,4 @@
-import { getOpenAIClient, hasOpenAIKey, DEFAULT_MODEL } from "@/services/ai/openai-client";
+import { completeVision } from "@/services/ai/openai-client";
 import { DEMO_MODE } from "@/utils/demo-mode";
 
 const DEMO_RESUME_TEXT =
@@ -14,31 +14,9 @@ export async function fileToDataUrl(file: File): Promise<string> {
 }
 
 export async function extractResumeTextFromImage(dataUrl: string): Promise<string> {
-  if (DEMO_MODE || !hasOpenAIKey()) {
+  if (DEMO_MODE) {
     return DEMO_RESUME_TEXT;
   }
 
-  const openai = getOpenAIClient();
-  const response = await openai.chat.completions.create({
-    model: DEFAULT_MODEL,
-    temperature: 0,
-    messages: [
-      {
-        role: "user",
-        content: [
-          {
-            type: "text",
-            text: "Transcribe this resume image into clean plain text — include all sections (education, skills, projects, experience) verbatim. Return only the transcribed text, no commentary.",
-          },
-          { type: "image_url", image_url: { url: dataUrl } },
-        ],
-      },
-    ],
-  });
-
-  const text = response.choices[0]?.message?.content;
-  if (!text) {
-    throw new Error("Couldn't read any text from this image.");
-  }
-  return text;
+  return completeVision("Transcribe the attached resume image.", dataUrl);
 }

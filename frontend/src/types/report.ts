@@ -16,6 +16,9 @@ export interface EvaluationReport {
   confidence: number | null;
   overall_score: number | null;
   generated_at: string;
+  roadmap_id?: string | null;
+  report_payload?: Record<string, unknown>;
+  needs_human_interaction?: boolean;
 }
 
 export interface SkillScore {

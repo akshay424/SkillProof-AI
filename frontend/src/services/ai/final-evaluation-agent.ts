@@ -1,4 +1,4 @@
-import { completeJSON, hasOpenAIKey } from "@/services/ai/openai-client";
+import { completeJSON } from "@/services/ai/openai-client";
 import { DEMO_MODE } from "@/utils/demo-mode";
 import type { WorkEvidence } from "@/services/gitlab/fetch-work-evidence";
 import type { DiagnosticTask } from "@/types/roadmap";
@@ -8,32 +8,7 @@ import type { FinalEvaluationOutput, QuestionAnswerInput, WorkEvaluationOutput }
 // Work Evaluation Report with the fresher's question answers into one PM-ready report.
 // The code/Git evidence is preserved unchanged; answers are evaluated separately and
 // never used to erase a code gap or as proof a code gap didn't exist.
-const SYSTEM_PROMPT = `You are the Final Evaluation Agent. Combine the Work Evaluation Report, the generated
-question(s), and the fresher's answer(s) into one complete PM-ready report. Preserve the original Work
-Evaluation Report's code/CI evidence unchanged. Evaluate each answer separately from the code evidence —
-propose score/confidence changes only when the answer provides relevant, understandable evidence; never let
-a good answer erase a code gap, and never let a weak answer be used as proof the code itself was poor
-(record it as an understanding gap instead). Recalculate the overall score only after documenting the
-proposed competency updates. Generate one highest-priority next task from the combined evidence. Require
-human review for overrides, disagreement, low confidence, missing answers, or high-risk topics.
-Respond with strict JSON matching this exact shape, no prose outside JSON:
-{
-  "report_id": string,
-  "report_type": "DAY_WORK_FINAL",
-  "employee": { "id": string, "name": string, "role": string, "level": string },
-  "roadmap": { "id": string, "task_id": string, "task_title": string, "objective": string, "complexity": string, "evaluation_date": string, "timezone": string },
-  "work_summary": { "repository": string, "branch": string, "pull_request_id": string|null, "base_commit": string, "head_commit": string, "commits_observed": string[], "files_changed": string[], "build_status": "passed"|"failed"|"blocked", "tests": { "passed": number, "failed": number, "new_tests": number }, "coverage": { "before": number|null, "after": number|null }, "review_summary": string, "employee_explanation": string },
-  "task_expectation": { "acceptance_criteria": string[], "in_scope_competencies": string[], "out_of_scope_competencies": string[] },
-  "acceptance_criteria_assessment": [{ "criterion": string, "status": "met"|"partially_met"|"not_met"|"blocked_by_dependency"|"not_verifiable", "evidence": string[], "confidence": number }],
-  "competencies": [{ "name": string, "status": "evaluated"|"not_required"|"insufficient_evidence", "previous_score": number|null, "proposed_score": number|null, "target_score": number|null, "weight": number, "previous_confidence": number, "proposed_confidence": number, "code_and_ci_evidence": string[], "answer_evidence": string[], "strengths": string[], "gaps": string[], "score_change_reason": string }],
-  "questions_and_answers": [{ "question_id": string, "competency": string, "question": string, "answer": string, "answer_status": "answered"|"partially_answered"|"unanswered", "understanding_assessment": string, "answer_evidence": string[], "confidence": number }],
-  "overall_result": { "previous_score": number|null, "proposed_score": number|null, "risk_level": "low"|"medium"|"high", "strongest_competency": string, "priority_gap": string, "summary": string },
-  "final_strengths": string[],
-  "development_gaps": [{ "type": "code_gap"|"understanding_gap"|"evidence_gap"|"not_required", "gap": string, "evidence": string[], "priority": "low"|"medium"|"high" }],
-  "recommended_next_task": { "title": string, "objective": string, "deliverables": string[], "target_competency": string, "estimated_minutes": number, "expected_evidence": string[] },
-  "pm_action": { "recommended_decision": "approve"|"approve_with_changes"|"request_rework"|"mentor_review"|"reject_ai_evaluation", "reason": string, "options": string[] },
-  "human_review": { "required": boolean, "reason": string, "source_evaluation_id": string, "question_generator_id": string, "prompt_versions": string[] }
-}`;
+// The full output contract lives server-side under the "final_evaluation" operation.
 
 function buildDemoFinalEvaluation(
   employeeId: string,
@@ -147,7 +122,7 @@ export async function runFinalEvaluationAgent(input: {
   evaluation: WorkEvaluationOutput;
   answers: QuestionAnswerInput[];
 }): Promise<FinalEvaluationOutput> {
-  if (DEMO_MODE || !hasOpenAIKey()) {
+  if (DEMO_MODE) {
     return buildDemoFinalEvaluation(input.employeeId, input.employeeName, input.task, input.evaluation, input.answers);
   }
 
@@ -157,5 +132,5 @@ Work Evaluation Report: ${JSON.stringify(input.evaluation)}
 Questions and answers: ${JSON.stringify(input.answers)}
 Build status: ${input.evidence.buildStatus}`;
 
-  return completeJSON<FinalEvaluationOutput>(SYSTEM_PROMPT, user);
+  return completeJSON<FinalEvaluationOutput>("final_evaluation", user);
 }

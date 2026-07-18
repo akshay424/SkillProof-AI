@@ -24,6 +24,7 @@ import { runRoadmapCreatorAgentModeB } from "@/services/ai/roadmap-creator-agent
 import { useCreateRoadmapFromAgent } from "@/services/queries/roadmaps";
 import { useCreateDailyReport } from "@/services/queries/reports";
 import { useRecordSkillScores } from "@/services/queries/skill-scores";
+import { validateEmployeeAnswer, validateGitBranch, validateRepositoryUrl } from "@/services/validation/skillflow";
 import type { GeneratedQuestion, QuestionAnswerInput, WorkEvaluationOutput } from "@/types/evaluation";
 import type { DiagnosticTask, RoadmapRecord } from "@/types/roadmap";
 
@@ -132,7 +133,12 @@ export function EvaluateDialog({
   };
 
   const handleFetchAndEvaluate = async () => {
-    if (!gitlabUrl.trim() || !employeeExplanation.trim()) return;
+    const validationMessage =
+      validateRepositoryUrl(gitlabUrl) ?? validateGitBranch(branch) ?? validateEmployeeAnswer(employeeExplanation);
+    if (validationMessage) {
+      setError(validationMessage);
+      return;
+    }
     setError(null);
     setStage("fetching");
     try {
@@ -158,7 +164,13 @@ export function EvaluateDialog({
   };
 
   const handleSubmitAnswer = async () => {
-    if (!currentAnswer.trim() || !workEvaluation) return;
+    if (!workEvaluation) return;
+    const answerError = validateEmployeeAnswer(currentAnswer);
+    if (answerError) {
+      setError(answerError);
+      return;
+    }
+    setError(null);
 
     const q = questions[questionIndex];
     const updated = [...answers, { question_id: q.question_id, competency: q.competency, question: q.question, answer: currentAnswer }];
@@ -194,19 +206,19 @@ export function EvaluateDialog({
           {stage === "setup" && (
             <div className="space-y-4 py-2">
               <div className="space-y-2">
-                <Label htmlFor="gitlab-url">GitLab repository URL</Label>
+                <Label htmlFor="repo-url">Repository URL (GitHub, GitLab, or Bitbucket)</Label>
                 <Input
-                  id="gitlab-url"
-                  placeholder="https://gitlab.com/your-username/your-project"
+                  id="repo-url"
+                  placeholder="https://github.com/your-username/your-project"
                   value={gitlabUrl}
                   onChange={(e) => setGitlabUrl(e.target.value)}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="gitlab-branch">Branch</Label>
-                <Input id="gitlab-branch" value={branch} onChange={(e) => setBranch(e.target.value)} />
+                <Label htmlFor="repo-branch">Branch</Label>
+                <Input id="repo-branch" value={branch} onChange={(e) => setBranch(e.target.value)} />
                 <p className="text-xs text-muted-foreground">
-                  For private repos, add a GitLab token in Profile Settings first.
+                  Public repos work out of the box. For private GitLab repos, add a GitLab token in Profile Settings first.
                 </p>
               </div>
               <div className="space-y-2">

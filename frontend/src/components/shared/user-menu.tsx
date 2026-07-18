@@ -15,7 +15,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useUser } from "@/hooks/use-user";
-import { logout } from "@/services/queries/users";
+import { DEMO_MODE } from "@/utils/demo-mode";
 import { ROLE_LABELS } from "@/utils/constants";
 
 function initials(name: string | null) {
@@ -32,8 +32,10 @@ export function UserMenu() {
   const router = useRouter();
   const { data: user } = useUser();
 
-  const handleSignOut = () => {
-    logout();
+  const handleSignOut = async () => {
+    if (!DEMO_MODE) {
+      await fetch("/api/session/logout", { method: "POST" });
+    }
     router.replace("/login");
     router.refresh();
   };

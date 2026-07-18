@@ -1,4 +1,4 @@
-import { completeJSON, hasOpenAIKey } from "@/services/ai/openai-client";
+import { completeJSON } from "@/services/ai/openai-client";
 import { DEMO_MODE } from "@/utils/demo-mode";
 import type { FinalEvaluationOutput, WeeklyEvaluationOutput } from "@/types/evaluation";
 
@@ -6,30 +6,7 @@ import type { FinalEvaluationOutput, WeeklyEvaluationOutput } from "@/types/eval
 // the week's daily Final Evaluation Reports into a growth/performance trend report,
 // comparing the fresher with their own prior evidence — never ranking against peers,
 // never using commit count/hours/PR count as a metric.
-const SYSTEM_PROMPT = `You are the Weekly Evaluation Agent. Generate a weekly growth report using the week's
-daily Final Evaluation Reports as the primary source of truth — do not rebuild evaluations from raw evidence
-when a daily report already exists. Compare the fresher with their own previous evidence over time, not
-against other employees. Do not use commit count, lines changed, work hours, or PR count as primary metrics.
-Do not penalize absence, leave, or CI infrastructure failures. Recommend mentor support when the same gap
-repeats in 3+ daily reports, confidence stays below 50%, or evidence conflicts. Track roadmap progress and
-practical outputs completed.
-Respond with strict JSON matching this exact shape, no prose outside JSON:
-{
-  "report_id": string,
-  "report_type": "WEEKLY",
-  "employee": { "id": string, "name": string, "role": string, "level": string },
-  "roadmap": { "id": string, "title": string, "progress_percent": number },
-  "period": { "start": string, "end": string, "timezone": string, "daily_reports_included": string[], "daily_reports_missing": string[] },
-  "work_summary": { "completed_evaluations": number, "practical_outputs_completed": number, "average_task_score": number|null, "first_task_score": number|null, "latest_task_score": number|null, "score_trend": "improving"|"stable"|"declining"|"insufficient_evidence", "average_confidence": number|null, "confidence_trend": "increasing"|"stable"|"decreasing"|"insufficient_evidence" },
-  "competency_tracking": [{ "competency": string, "tasks_evaluated": number, "first_score": number|null, "latest_score": number|null, "average_score": number|null, "target_score": number|null, "trend": "improving"|"stable"|"declining"|"repeated_gap"|"insufficient_evidence", "guidance_level": "guided"|"independent"|"explainable"|"insufficient_evidence", "confidence": number, "evidence": string[], "next_focus": string }],
-  "strengths": [{ "strength": string, "evidence": string[], "source_daily_reports": string[] }],
-  "development_gaps": [{ "type": "code_gap"|"understanding_gap"|"evidence_gap", "gap": string, "frequency": number, "priority": "low"|"medium"|"high", "evidence": string[], "source_daily_reports": string[] }],
-  "attendance_and_blockers": { "attendance_status": string, "skill_score_changed": boolean, "roadmap_paused": boolean, "ci_or_repository_failures": string[], "employee_blockers": string[] },
-  "weekly_status": "paused"|"behind"|"needs_support"|"on_track"|"ahead"|"insufficient_evidence",
-  "mentor_review": { "required": boolean, "reason": string, "discussion_points": string[] },
-  "next_week_plan": { "focus_competency": string, "recommended_task": string, "reason": string, "expected_evidence": string[] },
-  "human_review": { "required": boolean, "reason": string, "source_daily_reports": string[], "previous_weekly_report": string|null }
-}`;
+// The full output contract lives server-side under the "weekly_evaluation" operation.
 
 function buildDemoWeeklyEvaluation(
   employeeId: string,
@@ -128,7 +105,7 @@ export async function runWeeklyEvaluationAgent(input: {
   roadmapTitle: string;
   dailyReports: FinalEvaluationOutput[];
 }): Promise<WeeklyEvaluationOutput> {
-  if (DEMO_MODE || !hasOpenAIKey()) {
+  if (DEMO_MODE) {
     return buildDemoWeeklyEvaluation(input.employeeId, input.employeeName, input.roadmapId, input.roadmapTitle, input.dailyReports);
   }
 
@@ -136,5 +113,5 @@ export async function runWeeklyEvaluationAgent(input: {
 Roadmap: ${input.roadmapTitle} (id: ${input.roadmapId})
 This week's daily Final Evaluation Reports: ${JSON.stringify(input.dailyReports)}`;
 
-  return completeJSON<WeeklyEvaluationOutput>(SYSTEM_PROMPT, user);
+  return completeJSON<WeeklyEvaluationOutput>("weekly_evaluation", user);
 }

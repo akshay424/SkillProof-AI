@@ -1,4 +1,4 @@
-import { completeJSON, hasOpenAIKey } from "@/services/ai/openai-client";
+import { completeJSON } from "@/services/ai/openai-client";
 import { DEMO_MODE } from "@/utils/demo-mode";
 import type { FinalEvaluationOutput, RoadmapCompletionOutput, WeeklyEvaluationOutput } from "@/types/evaluation";
 import type { RoadmapRecord } from "@/types/roadmap";
@@ -7,29 +7,7 @@ import type { RoadmapRecord } from "@/types/roadmap";
 // agents/roadmap-completion.md: the complete final fresher growth report after all
 // required roadmap work is done, for PM review — a readiness recommendation, never
 // an automatic hiring/promotion/salary/employment decision.
-const SYSTEM_PROMPT = `You are the Roadmap Completion Evaluation Agent. Generate the complete final fresher
-growth report once all required roadmap work is complete, using daily Final Evaluation Reports and Weekly
-Evaluation Reports as the evidence history. Evaluate readiness against the roadmap goal, not every possible
-skill. Summarize demonstrated strengths with references to source reports. Separate code gaps, understanding
-gaps, evidence gaps, and out-of-scope competencies. Track competency progression from earliest to latest
-evidence. This is a readiness recommendation for PM review, never an automatic hiring, promotion, salary, or
-employment decision.
-Respond with strict JSON matching this exact shape, no prose outside JSON:
-{
-  "report_id": string,
-  "report_type": "ROADMAP_COMPLETE",
-  "employee": { "id": string, "name": string, "role": string, "level": string },
-  "roadmap": { "id": string, "title": string, "goal": string, "target_role": string, "completion_status": "completed"|"completed_with_blockers"|"incomplete", "completion_percent": number, "start_date": string, "completion_date": string },
-  "completion_evidence": { "required_task_count": number, "completed_task_count": number, "blocked_task_count": number, "waived_task_count": number, "missing_task_count": number, "daily_report_ids": string[], "weekly_report_ids": string[], "final_task_report_ids": string[], "pm_override_ids": string[] },
-  "competency_summary": [{ "competency": string, "roadmap_required": boolean, "initial_status": string, "final_status": string, "initial_score": number|null, "final_score": number|null, "target_score": number|null, "trend": "improving"|"stable"|"declining"|"insufficient_evidence", "confidence": number, "demonstrated_independently": boolean, "evidence": string[], "remaining_gap": string }],
-  "demonstrated_strengths": [{ "strength": string, "evidence": string[], "source_report_ids": string[] }],
-  "remaining_development_gaps": [{ "type": "code_gap"|"understanding_gap"|"evidence_gap"|"outside_scope", "gap": string, "priority": "low"|"medium"|"high", "evidence": string[], "source_report_ids": string[] }],
-  "overall_result": { "average_final_task_score": number|null, "overall_confidence": number, "readiness": "developing"|"partially_ready"|"ready_for_pm_review", "summary": string, "evidence_limitations": string[] },
-  "recommended_next_stage": { "title": string, "objective": string, "reason": string, "expected_evidence": string[] },
-  "mentor_recommendation": { "required": boolean, "reason": string, "discussion_points": string[] },
-  "pm_review": { "required": boolean, "recommended_decision": "approve_readiness"|"extend_roadmap"|"assign_mentor"|"request_additional_evidence"|"reject_ai_report", "reason": string, "available_actions": string[] },
-  "audit": { "agent_name": "Roadmap Completion Evaluation Agent", "prompt_version": string, "generated_at": string, "source_daily_reports": string[], "source_weekly_reports": string[], "source_final_task_reports": string[], "human_review_required": boolean }
-}`;
+// The full output contract lives server-side under the "roadmap_completion" operation.
 
 function buildDemoRoadmapCompletion(
   employeeId: string,
@@ -152,7 +130,7 @@ export async function runRoadmapCompletionAgent(input: {
   dailyReports: FinalEvaluationOutput[];
   weeklyReports: WeeklyEvaluationOutput[];
 }): Promise<RoadmapCompletionOutput> {
-  if (DEMO_MODE || !hasOpenAIKey()) {
+  if (DEMO_MODE) {
     return buildDemoRoadmapCompletion(input.employeeId, input.employeeName, input.roadmap, input.dailyReports, input.weeklyReports);
   }
 
@@ -161,5 +139,5 @@ Roadmap: ${JSON.stringify({ id: input.roadmap.id, title: input.roadmap.title, ta
 Daily Final Evaluation Reports: ${JSON.stringify(input.dailyReports)}
 Weekly Evaluation Reports: ${JSON.stringify(input.weeklyReports)}`;
 
-  return completeJSON<RoadmapCompletionOutput>(SYSTEM_PROMPT, user);
+  return completeJSON<RoadmapCompletionOutput>("roadmap_completion", user);
 }
