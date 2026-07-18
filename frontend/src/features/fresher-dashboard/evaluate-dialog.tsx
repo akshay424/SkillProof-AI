@@ -234,7 +234,7 @@ export function EvaluateDialog({
                   onChange={(e) => setGitlabUrl(e.target.value)}
                 />
                 <p className="text-xs text-muted-foreground">
-                  SkillFlow evaluates the <strong>evaluate</strong> branch by default. Public GitHub and GitLab repositories are supported.
+                  SkillFlow evaluates the <strong>evaluate</strong> branch by default. Public GitHub, GitLab, and Bitbucket repositories are supported.
                 </p>
               </div>
               <div className="space-y-2">

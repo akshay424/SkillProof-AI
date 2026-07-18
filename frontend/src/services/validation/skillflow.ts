@@ -25,15 +25,15 @@ export function validateRoadmapRequest(resumeText: string, interviewNotes: strin
 }
 
 export function validateRepositoryUrl(value: string): string | null {
-  if (!value.trim()) return "Enter your GitHub or GitLab repository URL to evaluate this task.";
+  if (!value.trim()) return "Enter your GitHub, GitLab, or Bitbucket repository URL to evaluate this task.";
   try {
     const url = new URL(value.trim());
     const segments = url.pathname.split("/").filter(Boolean);
-    if (url.protocol !== "https:" || !["github.com", "gitlab.com"].includes(url.hostname.toLowerCase()) || segments.length < 2) {
-      return "Use a complete HTTPS GitHub or GitLab project URL, for example https://github.com/owner/repository.";
+    if (url.protocol !== "https:" || !["github.com", "gitlab.com", "bitbucket.org"].includes(url.hostname.toLowerCase()) || segments.length < 2) {
+      return "Use a complete HTTPS GitHub, GitLab, or Bitbucket project URL, for example https://github.com/owner/repository.";
     }
   } catch {
-    return "Enter a valid GitHub or GitLab repository URL.";
+    return "Enter a valid GitHub, GitLab, or Bitbucket repository URL.";
   }
   return null;
 }

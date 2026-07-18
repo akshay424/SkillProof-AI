@@ -16,11 +16,12 @@ const CODE_EXTENSIONS = [
 ];
 const MAX_FILES = 15;
 const MAX_CHARS_PER_FILE = 6000;
-const ALLOWED_REPOSITORY_HOSTS = new Set(["gitlab.com", "github.com"]);
+const ALLOWED_REPOSITORY_HOSTS = new Set(["gitlab.com", "github.com", "bitbucket.org"]);
 
 type RepositoryLocation =
   | { provider: "gitlab"; host: "gitlab.com"; projectPath: string }
-  | { provider: "github"; owner: string; repository: string };
+  | { provider: "github"; owner: string; repository: string }
+  | { provider: "bitbucket"; workspace: string; repository: string };
 
 const DEMO_FILES: RepoFile[] = [
   {
@@ -59,15 +60,17 @@ function parseRepositoryUrl(repositoryUrl: string): RepositoryLocation {
   const host = url.hostname.toLowerCase();
   const path = url.pathname.replace(/^\/|\.git$|\/$/g, "");
   if (url.protocol !== "https:" || !ALLOWED_REPOSITORY_HOSTS.has(host) || !path) {
-    throw new Error("Use a complete HTTPS github.com or gitlab.com repository URL.");
+    throw new Error("Use a complete HTTPS GitHub, GitLab, or Bitbucket repository URL.");
   }
   if (host === "gitlab.com") return { provider: "gitlab", host, projectPath: path };
 
   const [owner, repository, ...rest] = path.split("/");
   if (!owner || !repository || rest.length > 0) {
-    throw new Error("Use a complete GitHub project URL, for example https://github.com/owner/repository.");
+    throw new Error("Use a complete project URL, for example https://github.com/owner/repository.");
   }
-  return { provider: "github", owner, repository };
+  return host === "github.com"
+    ? { provider: "github", owner, repository }
+    : { provider: "bitbucket", workspace: owner, repository };
 }
 
 async function gitlabFetch(host: string, path: string, token?: string): Promise<Response> {
@@ -93,6 +96,19 @@ async function githubFetch(path: string): Promise<Response> {
   }
   if (!response.ok) {
     throw new Error(`GitHub API request failed (${response.status}). Check that the repository and selected branch are public and accessible.`);
+  }
+  return response;
+}
+
+async function bitbucketFetch(path: string): Promise<Response> {
+  let response: Response;
+  try {
+    response = await fetch(`https://api.bitbucket.org/2.0${path}`);
+  } catch {
+    throw new Error("Could not reach Bitbucket. Check your internet connection and try again.");
+  }
+  if (!response.ok) {
+    throw new Error(`Bitbucket API request failed (${response.status}). Check that the repository and selected branch are public and accessible.`);
   }
   return response;
 }
@@ -141,10 +157,40 @@ async function fetchGitHubRepoFiles(location: Extract<RepositoryLocation, { prov
   }));
 }
 
+interface BitbucketEntry {
+  type: "commit_file" | "commit_directory";
+  path: string;
+}
+
+async function fetchBitbucketRepoFiles(location: Extract<RepositoryLocation, { provider: "bitbucket" }>, branch: string): Promise<RepoFile[]> {
+  const repository = `${encodeURIComponent(location.workspace)}/${encodeURIComponent(location.repository)}`;
+  const files: BitbucketEntry[] = [];
+
+  const visit = async (directory = ""): Promise<void> => {
+    if (files.length >= MAX_FILES) return;
+    const path = directory ? `/${directory.split("/").map(encodeURIComponent).join("/")}` : "";
+    const response = await bitbucketFetch(`/repositories/${repository}/src/${encodeURIComponent(branch)}${path}?pagelen=100`);
+    const page = (await response.json()) as { values?: BitbucketEntry[] };
+    for (const entry of page.values ?? []) {
+      if (files.length >= MAX_FILES) return;
+      if (entry.type === "commit_file" && isCodeFile(entry.path)) files.push(entry);
+      if (entry.type === "commit_directory") await visit(entry.path);
+    }
+  };
+
+  await visit();
+  if (files.length === 0) throw new Error("No recognized source files were found on the selected branch.");
+  return Promise.all(files.map(async (entry) => {
+    const path = entry.path.split("/").map(encodeURIComponent).join("/");
+    const response = await bitbucketFetch(`/repositories/${repository}/src/${encodeURIComponent(branch)}/${path}`);
+    return { path: entry.path, content: (await response.text()).slice(0, MAX_CHARS_PER_FILE) };
+  }));
+}
+
 export async function fetchRepoFiles(repositoryUrl: string, branch = "evaluate", token?: string): Promise<RepoFile[]> {
   if (DEMO_MODE) return DEMO_FILES;
   const location = parseRepositoryUrl(repositoryUrl);
-  return location.provider === "github"
-    ? fetchGitHubRepoFiles(location, branch)
-    : fetchGitLabRepoFiles(location, branch, token);
+  if (location.provider === "github") return fetchGitHubRepoFiles(location, branch);
+  if (location.provider === "bitbucket") return fetchBitbucketRepoFiles(location, branch);
+  return fetchGitLabRepoFiles(location, branch, token);
 }
