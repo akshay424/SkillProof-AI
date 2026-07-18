@@ -1,7 +1,6 @@
 "use client";
 
 import { LogOut, Settings, UserRound } from "lucide-react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -29,15 +28,16 @@ function initials(name: string | null) {
 }
 
 export function UserMenu() {
-  const router = useRouter();
   const { data: user } = useUser();
 
   const handleSignOut = async () => {
     if (!DEMO_MODE) {
       await fetch("/api/session/logout", { method: "POST" });
     }
-    router.replace("/login");
-    router.refresh();
+    // Hard navigation so no stale logged-in pages survive in the router cache
+    // (mirrors the login flow, which also avoids soft navigation after a
+    // cookie change).
+    window.location.assign("/login");
   };
 
   if (!user) {
