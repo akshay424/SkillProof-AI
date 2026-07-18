@@ -8,14 +8,17 @@ import { toast } from "sonner";
 import { GlassCard } from "@/components/shared/glass-card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { generateRoadmap } from "@/services/ai/roadmap-agent";
+import { runResumeReaderAgent } from "@/services/ai/resume-reader-agent";
+import { runRoadmapCreatorAgent } from "@/services/ai/roadmap-creator-agent";
 import { extractResumeTextFromImage, fileToDataUrl } from "@/services/ai/resume-vision";
 import { extractTextFromPdf } from "@/services/pdf/extract-text";
 import { useCreateRoadmapFromAgent } from "@/services/queries/roadmaps";
 import { useUpdateUserProfile } from "@/services/queries/users";
 import type { UserProfile } from "@/types/user";
 
-export function OnboardingCard({ profile }: { profile: UserProfile }) {
+const DEFAULT_TARGET_ROLE = "AI Product Developer";
+
+export function OnboardingCard({ authId, profile }: { authId: string; profile: UserProfile }) {
   const [resumeText, setResumeText] = useState(profile.resume_text ?? "");
   const [resumeFileName, setResumeFileName] = useState<string | null>(profile.resume_text ? "Resume on file" : null);
   const [interviewNotes, setInterviewNotes] = useState(profile.interview_notes ?? "");
@@ -52,17 +55,31 @@ export function OnboardingCard({ profile }: { profile: UserProfile }) {
   });
 
   const canGenerate = resumeText.trim().length > 0 && interviewNotes.trim().length > 0;
+  const targetRole = profile.target_role ?? DEFAULT_TARGET_ROLE;
 
   const handleGenerate = async () => {
     setGenerating(true);
     try {
       await updateProfile.mutateAsync({
         id: profile.id,
-        updates: { resume_text: resumeText, interview_notes: interviewNotes },
+        updates: { resume_text: resumeText, interview_notes: interviewNotes, target_role: targetRole },
       });
 
-      const generated = await generateRoadmap(resumeText, interviewNotes);
-      await createRoadmap.mutateAsync({ userId: profile.id, generated });
+      const resumeReader = await runResumeReaderAgent(resumeText);
+      const payload = await runRoadmapCreatorAgent({
+        employeeId: authId,
+        employeeName: profile.full_name ?? "Fresher",
+        targetRole,
+        resumeReader,
+        interviewNotes,
+      });
+
+      await createRoadmap.mutateAsync({
+        userId: authId,
+        title: payload.first_day_roadmap.goal || "First Day Diagnostic Roadmap",
+        targetRole,
+        payload,
+      });
 
       toast.success("Your roadmap is ready");
     } catch (error) {
@@ -82,7 +99,7 @@ export function OnboardingCard({ profile }: { profile: UserProfile }) {
           <h2 className="font-semibold">Welcome — let&apos;s build your roadmap</h2>
           <p className="text-sm text-muted-foreground">
             Upload your resume and add the interview evaluation notes. AI will generate your
-            personalized 8-week project readiness roadmap.
+            personalized first-day diagnostic roadmap.
           </p>
         </div>
       </div>

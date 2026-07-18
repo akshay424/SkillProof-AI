@@ -6,36 +6,29 @@ import { GlassCard } from "@/components/shared/glass-card";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ListRowsSkeleton } from "@/components/shared/loading-skeletons";
 import { Progress } from "@/components/ui/progress";
-import { usePmFreshers } from "@/services/queries/users";
-import { useSkillScoresForUsers } from "@/services/queries/skill-scores";
-import type { SkillScore } from "@/types/report";
+import { usePmDashboard } from "@/services/queries/pm";
+import type { PmDashboardFresherEntry } from "@/types/pm";
 
-function weakestSkills(scores: SkillScore[], limit = 4): { skill: string; average: number }[] {
-  const latestPerUserSkill = new Map<string, number>();
-  for (const s of scores) {
-    const key = `${s.user_id}::${s.skill_name}`;
-    if (!latestPerUserSkill.has(key)) latestPerUserSkill.set(key, s.score);
+// Same data limitation as team-heatmap.tsx: the real backend exposes each
+// fresher's weaknesses[] (evidence-backed gaps), not a numeric team-wide score,
+// so "weakest" here means most frequently reported across the team.
+function teamWeaknessFrequency(freshers: PmDashboardFresherEntry[], limit = 4): { skill: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const entry of freshers) {
+    for (const skill of entry.weaknesses) {
+      counts.set(skill, (counts.get(skill) ?? 0) + 1);
+    }
   }
-
-  const bySkill = new Map<string, number[]>();
-  for (const [key, score] of latestPerUserSkill) {
-    const skill = key.split("::")[1];
-    bySkill.set(skill, [...(bySkill.get(skill) ?? []), score]);
-  }
-
-  return Array.from(bySkill.entries())
-    .map(([skill, values]) => ({
-      skill,
-      average: Math.round(values.reduce((a, b) => a + b, 0) / values.length),
-    }))
-    .sort((a, b) => a.average - b.average)
+  return Array.from(counts.entries())
+    .map(([skill, count]) => ({ skill, count }))
+    .sort((a, b) => b.count - a.count)
     .slice(0, limit);
 }
 
 export function WeakSkillsPanel({ pmId }: { pmId: string | undefined }) {
-  const { data: freshers } = usePmFreshers(pmId);
-  const { data: scores, isLoading } = useSkillScoresForUsers(freshers?.map((e) => e.id) ?? []);
-  const weakest = scores ? weakestSkills(scores) : [];
+  const { data: dashboard, isLoading } = usePmDashboard(pmId);
+  const freshers = dashboard?.freshers ?? [];
+  const weakest = teamWeaknessFrequency(freshers);
 
   return (
     <GlassCard className="p-6">
@@ -46,13 +39,15 @@ export function WeakSkillsPanel({ pmId }: { pmId: string | undefined }) {
         <EmptyState icon={TrendingDown} title="No skill gaps identified" />
       ) : (
         <div className="space-y-3">
-          {weakest.map(({ skill, average }) => (
+          {weakest.map(({ skill, count }) => (
             <div key={skill} className="space-y-1">
               <div className="flex items-center justify-between text-sm">
                 <span className="font-medium">{skill}</span>
-                <span className="text-muted-foreground tabular-nums">{average}%</span>
+                <span className="text-muted-foreground tabular-nums">
+                  {count} of {freshers.length}
+                </span>
               </div>
-              <Progress value={average} className="h-2" />
+              <Progress value={(count / freshers.length) * 100} className="h-2" />
             </div>
           ))}
         </div>

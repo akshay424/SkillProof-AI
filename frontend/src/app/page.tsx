@@ -1,29 +1,24 @@
-import { redirect } from "next/navigation";
+"use client";
 
-import { createClient } from "@/services/supabase/server";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+
+import { useUser } from "@/hooks/use-user";
 import { DEMO_MODE } from "@/utils/demo-mode";
-import type { UserRole } from "@/types/user";
+import { ROLE_HOME_PATH } from "@/utils/constants";
 
-export default async function RootPage() {
-  if (DEMO_MODE) {
-    redirect("/fresher");
-  }
+export default function RootPage() {
+  const router = useRouter();
+  const { data: user, isLoading } = useUser();
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  useEffect(() => {
+    if (DEMO_MODE) {
+      router.replace("/fresher");
+      return;
+    }
+    if (isLoading) return;
+    router.replace(user ? ROLE_HOME_PATH[user.profile.role] : "/login");
+  }, [isLoading, user, router]);
 
-  if (!user) {
-    redirect("/login");
-  }
-
-  const { data: profile } = await supabase
-    .from("user_profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-
-  const role = (profile as { role: UserRole } | null)?.role;
-  redirect(role ? `/${role}` : "/login");
+  return null;
 }

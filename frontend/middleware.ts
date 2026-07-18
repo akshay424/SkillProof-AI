@@ -1,13 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { updateSession } from "@/services/supabase/middleware";
-import { DEMO_MODE } from "@/utils/demo-mode";
-
-export async function middleware(request: NextRequest) {
-  if (DEMO_MODE) {
-    return NextResponse.next();
-  }
-  return updateSession(request);
+// Auth is a bearer JWT held in localStorage (from the real SkillFlow API), not a
+// cookie session, so middleware can't inspect or refresh it server-side. Route
+// protection happens client-side instead — see components/shared/role-guard.tsx.
+export function middleware(_request: NextRequest) {
+  return NextResponse.next();
 }
 
 export const config = {

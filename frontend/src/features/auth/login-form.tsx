@@ -2,7 +2,6 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2 } from "lucide-react";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -18,8 +17,10 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { OAuthButtons } from "@/features/auth/oauth-buttons";
-import { createClient } from "@/services/supabase/client";
+import { ApiError } from "@/services/api-client";
+import { login } from "@/services/queries/users";
+import { ROLE_HOME_PATH } from "@/utils/constants";
+import type { UserRole } from "@/types/user";
 
 const loginSchema = z.object({
   email: z.string().min(1, "Email is required").email("Enter a valid email address"),
@@ -39,16 +40,14 @@ export function LoginForm() {
   });
 
   const onSubmit = async (values: LoginValues) => {
-    const supabase = createClient();
-    const { error } = await supabase.auth.signInWithPassword(values);
-
-    if (error) {
-      toast.error(error.message);
-      return;
+    try {
+      const user = await login(values.email, values.password);
+      const role = user.role.toLowerCase() as UserRole;
+      router.replace(redirectTo ?? ROLE_HOME_PATH[role]);
+      router.refresh();
+    } catch (error) {
+      toast.error(error instanceof ApiError ? error.message : "Sign in failed");
     }
-
-    router.replace(redirectTo ?? "/");
-    router.refresh();
   };
 
   return (
@@ -73,12 +72,7 @@ export function LoginForm() {
             name="password"
             render={({ field }) => (
               <FormItem>
-                <div className="flex items-center justify-between">
-                  <FormLabel>Password</FormLabel>
-                  <Link href="/forgot-password" className="text-xs font-medium text-primary hover:underline">
-                    Forgot password?
-                  </Link>
-                </div>
+                <FormLabel>Password</FormLabel>
                 <FormControl>
                   <Input type="password" placeholder="••••••••" autoComplete="current-password" {...field} />
                 </FormControl>
@@ -92,24 +86,6 @@ export function LoginForm() {
           </Button>
         </form>
       </Form>
-
-      <div className="relative">
-        <div className="absolute inset-0 flex items-center">
-          <span className="w-full border-t border-border" />
-        </div>
-        <div className="relative flex justify-center text-xs uppercase">
-          <span className="bg-background px-2 text-muted-foreground">Or continue with</span>
-        </div>
-      </div>
-
-      <OAuthButtons redirectTo={redirectTo} />
-
-      <p className="text-center text-sm text-muted-foreground">
-        Don&apos;t have an account?{" "}
-        <Link href="/signup" className="font-medium text-primary hover:underline">
-          Sign up
-        </Link>
-      </p>
     </div>
   );
 }

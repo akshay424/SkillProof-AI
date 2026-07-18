@@ -8,6 +8,10 @@ import OpenAI from "openai";
  */
 let client: OpenAI | null = null;
 
+export function hasOpenAIKey(): boolean {
+  return !!process.env.NEXT_PUBLIC_OPENAI_API_KEY;
+}
+
 export function getOpenAIClient(): OpenAI {
   const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY;
   if (!apiKey) {

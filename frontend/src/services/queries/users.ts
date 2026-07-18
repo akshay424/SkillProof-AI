@@ -3,13 +3,46 @@ import { usePathname } from "next/navigation";
 
 import { demoStore } from "@/mocks/demo-store";
 import { MOCK_FRESHER, MOCK_PM } from "@/mocks/fixtures";
-import { createClient } from "@/services/supabase/client";
+import { apiFetch, clearToken, getToken, setToken } from "@/services/api-client";
 import { DEMO_MODE } from "@/utils/demo-mode";
-import type { UserProfile } from "@/types/user";
+import type { BackendAuthUser, BackendFresherProfile, UserProfile, UserRole } from "@/types/user";
 
 function demoPersonaForPath(pathname: string): UserProfile {
   const persona = pathname.startsWith("/pm") ? MOCK_PM : MOCK_FRESHER;
   return demoStore.users.find((u) => u.id === persona.id) ?? persona;
+}
+
+function backendProfileToUserProfile(user: BackendAuthUser, profile: BackendFresherProfile | null): UserProfile {
+  const metadata = profile?.profile_metadata ?? {};
+  return {
+    id: profile?.id ?? user.id,
+    organization_id: null,
+    full_name: user.name,
+    avatar_url: null,
+    role: user.role.toLowerCase() as UserRole,
+    pm_id: null,
+    job_title: typeof metadata.job_title === "string" ? metadata.job_title : null,
+    target_role: profile?.target_role ?? null,
+    gitlab_token: typeof metadata.gitlab_token === "string" ? metadata.gitlab_token : null,
+    gitlab_repo_url: typeof metadata.gitlab_repo_url === "string" ? metadata.gitlab_repo_url : null,
+    resume_text: typeof profile?.resume_summary === "string" ? profile.resume_summary : null,
+    interview_notes: typeof profile?.interview_evaluation === "string" ? profile.interview_evaluation : null,
+    created_at: profile?.created_at ?? new Date().toISOString(),
+    updated_at: profile?.updated_at ?? new Date().toISOString(),
+  };
+}
+
+export async function login(email: string, password: string) {
+  const data = await apiFetch<{ access_token: string; user: BackendAuthUser }>("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  });
+  setToken(data.access_token);
+  return data.user;
+}
+
+export function logout() {
+  clearToken();
 }
 
 export function useCurrentUser() {
@@ -23,135 +56,57 @@ export function useCurrentUser() {
         return { authId: profile.id, email: `${profile.role}.demo@skillproof.ai`, profile };
       }
 
-      const supabase = createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return null;
+      if (!getToken()) return null;
 
-      const { data: profile, error } = await supabase
-        .from("user_profiles")
-        .select("*")
-        .eq("id", user.id)
-        .single();
-      if (error) throw error;
+      const user = await apiFetch<BackendAuthUser>("/api/auth/me");
+      const profile =
+        user.role === "FRESHER" ? await apiFetch<BackendFresherProfile>("/api/freshers/me/profile") : null;
 
-      return { authId: user.id, email: user.email ?? null, profile: profile as UserProfile };
-    },
-  });
-}
-
-export function useOrgMembers(organizationId: string | undefined) {
-  return useQuery({
-    queryKey: ["org-members", organizationId],
-    enabled: DEMO_MODE || !!organizationId,
-    queryFn: async (): Promise<UserProfile[]> => {
-      if (DEMO_MODE) return demoStore.users;
-
-      const supabase = createClient();
-      const { data, error } = await supabase
-        .from("user_profiles")
-        .select("*")
-        .eq("organization_id", organizationId!)
-        .order("full_name");
-      if (error) throw error;
-      return data as UserProfile[];
-    },
-  });
-}
-
-export function usePmFreshers(pmId: string | undefined) {
-  return useQuery({
-    queryKey: ["pm-freshers", pmId],
-    enabled: DEMO_MODE || !!pmId,
-    queryFn: async (): Promise<UserProfile[]> => {
-      if (DEMO_MODE) return demoStore.users.filter((u) => u.role === "fresher" && u.pm_id === pmId);
-
-      const supabase = createClient();
-      const { data, error } = await supabase
-        .from("user_profiles")
-        .select("*")
-        .eq("pm_id", pmId!)
-        .order("full_name");
-      if (error) throw error;
-      return data as UserProfile[];
-    },
-  });
-}
-
-export function useUnassignedFreshers(organizationId: string | undefined) {
-  return useQuery({
-    queryKey: ["unassigned-freshers", organizationId],
-    enabled: DEMO_MODE || !!organizationId,
-    queryFn: async (): Promise<UserProfile[]> => {
-      if (DEMO_MODE) return demoStore.users.filter((u) => u.role === "fresher" && !u.pm_id);
-
-      const supabase = createClient();
-      const { data, error } = await supabase
-        .from("user_profiles")
-        .select("*")
-        .eq("organization_id", organizationId!)
-        .eq("role", "fresher")
-        .is("pm_id", null)
-        .order("full_name");
-      if (error) throw error;
-      return data as UserProfile[];
-    },
-  });
-}
-
-export function useUserProfileById(id: string | undefined) {
-  return useQuery({
-    queryKey: ["user-profile", id],
-    enabled: DEMO_MODE || !!id,
-    queryFn: async (): Promise<UserProfile | null> => {
-      if (DEMO_MODE) return demoStore.users.find((m) => m.id === id) ?? null;
-
-      const supabase = createClient();
-      const { data, error } = await supabase
-        .from("user_profiles")
-        .select("*")
-        .eq("id", id!)
-        .maybeSingle();
-      if (error) throw error;
-      return data as UserProfile | null;
+      return { authId: user.id, email: user.email, profile: backendProfileToUserProfile(user, profile) };
     },
   });
 }
 
 function invalidateProfileQueries(queryClient: ReturnType<typeof useQueryClient>) {
   queryClient.invalidateQueries({ queryKey: ["current-user"], refetchType: "all" });
-  queryClient.invalidateQueries({ queryKey: ["org-members"], refetchType: "all" });
-  queryClient.invalidateQueries({ queryKey: ["pm-freshers"], refetchType: "all" });
-  queryClient.invalidateQueries({ queryKey: ["unassigned-freshers"], refetchType: "all" });
-  queryClient.invalidateQueries({ queryKey: ["user-profile"], refetchType: "all" });
 }
 
-/** Demo-mode only for now (mutates the in-memory demoStore) — real Supabase persistence is a later phase. */
 export function useUpdateUserProfile() {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async (input: { id: string; updates: Partial<UserProfile> }) => {
-      const idx = demoStore.users.findIndex((u) => u.id === input.id);
-      if (idx !== -1) {
-        demoStore.users[idx] = { ...demoStore.users[idx], ...input.updates };
+      if (DEMO_MODE) {
+        const idx = demoStore.users.findIndex((u) => u.id === input.id);
+        if (idx !== -1) {
+          demoStore.users[idx] = { ...demoStore.users[idx], ...input.updates };
+        }
+        return;
       }
-    },
-    onSuccess: () => invalidateProfileQueries(queryClient),
-  });
-}
 
-/** Demo-mode only for now (mutates the in-memory demoStore) — real Supabase persistence is a later phase. */
-export function useClaimFresher() {
-  const queryClient = useQueryClient();
+      // Merge with the cached current profile so a partial update (e.g. onboarding
+      // only sending resume/notes) doesn't blank out unrelated profile_metadata
+      // fields — PATCH replaces profile_metadata wholesale, not a deep merge.
+      const cached = queryClient
+        .getQueriesData<{ profile: UserProfile } | null>({ queryKey: ["current-user"] })
+        .map(([, data]) => data)
+        .find((data): data is { profile: UserProfile } => !!data);
+      const current = cached?.profile;
+      const merged = { ...current, ...input.updates };
 
-  return useMutation({
-    mutationFn: async (input: { fresherId: string; pmId: string }) => {
-      const idx = demoStore.users.findIndex((u) => u.id === input.fresherId);
-      if (idx !== -1) {
-        demoStore.users[idx] = { ...demoStore.users[idx], pm_id: input.pmId };
-      }
+      await apiFetch<BackendFresherProfile>("/api/freshers/me/profile", {
+        method: "PATCH",
+        body: JSON.stringify({
+          target_role: merged.target_role ?? null,
+          resume_summary: merged.resume_text ?? null,
+          interview_evaluation: merged.interview_notes ?? null,
+          profile_metadata: {
+            job_title: merged.job_title ?? null,
+            gitlab_token: merged.gitlab_token ?? null,
+            gitlab_repo_url: merged.gitlab_repo_url ?? null,
+          },
+        }),
+      });
     },
     onSuccess: () => invalidateProfileQueries(queryClient),
   });

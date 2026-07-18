@@ -4,14 +4,12 @@ import { FreshersTable } from "@/features/pm-dashboard/freshers-table";
 import { ReadinessTrendChart } from "@/features/pm-dashboard/readiness-trend-chart";
 import { TaskCompletionStats } from "@/features/pm-dashboard/task-completion-stats";
 import { TeamHeatmap } from "@/features/pm-dashboard/team-heatmap";
-import { UnassignedFreshersList } from "@/features/pm-dashboard/unassigned-freshers-list";
 import { WeakSkillsPanel } from "@/features/pm-dashboard/weak-skills-panel";
 import { useUser } from "@/hooks/use-user";
 
 export default function PmDashboardPage() {
   const { data: user } = useUser();
   const pmId = user?.authId;
-  const organizationId = user?.profile.organization_id ?? undefined;
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -21,8 +19,6 @@ export default function PmDashboardPage() {
           Progress and readiness across the freshers you manage.
         </p>
       </div>
-
-      <UnassignedFreshersList organizationId={organizationId} pmId={pmId} />
 
       <FreshersTable pmId={pmId} />
 

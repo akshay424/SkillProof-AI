@@ -1,148 +1,122 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { demoId, demoStore } from "@/mocks/demo-store";
-import { createClient } from "@/services/supabase/client";
-import { demoTasksForUser } from "@/services/queries/tasks";
+import { apiFetch, ApiError } from "@/services/api-client";
 import { DEMO_MODE } from "@/utils/demo-mode";
-import type { GeneratedRoadmap } from "@/services/ai/roadmap-agent";
-import type { Roadmap, RoadmapWeek } from "@/types/roadmap";
-import type { Task } from "@/types/task";
+import { generateUUID } from "@/utils/uuid";
+import type { BackendRoadmapOut, RoadmapPayload, RoadmapRecord } from "@/types/roadmap";
 
-export interface RoadmapWithWeeks extends Roadmap {
-  roadmap_weeks: RoadmapWeek[];
+function readDemoRoadmap(userId: string | undefined): RoadmapRecord | null {
+  return demoStore.roadmaps.find((r) => r.user_id === userId) ?? null;
 }
 
-function readDemoRoadmap(userId: string | undefined): RoadmapWithWeeks | null {
-  const roadmap = demoStore.roadmaps.find((r) => r.user_id === userId);
-  if (!roadmap) return null;
-  const weeks = demoStore.roadmapWeeks
-    .filter((w) => w.roadmap_id === roadmap.id)
-    .sort((a, b) => a.week_number - b.week_number)
-    .map((w) => ({ ...w }));
-  return { ...roadmap, roadmap_weeks: weeks };
+function mapBackendRoadmap(r: BackendRoadmapOut): RoadmapRecord {
+  const { fresher_id, ...rest } = r;
+  return { ...rest, user_id: fresher_id, roadmap_payload: r.roadmap_payload ?? ({} as RoadmapPayload) };
 }
 
 export function useRoadmap(userId: string | undefined) {
   return useQuery({
     queryKey: ["roadmap", userId],
     enabled: DEMO_MODE || !!userId,
-    queryFn: async (): Promise<RoadmapWithWeeks | null> => {
+    queryFn: async (): Promise<RoadmapRecord | null> => {
       if (DEMO_MODE) return readDemoRoadmap(userId);
 
-      const supabase = createClient();
-      const { data, error } = await supabase
-        .from("roadmaps")
-        .select("*, roadmap_weeks(*)")
-        .eq("user_id", userId!)
-        .order("week_number", { referencedTable: "roadmap_weeks", ascending: true })
-        .maybeSingle();
-      if (error) throw error;
-      return data as RoadmapWithWeeks | null;
+      try {
+        const roadmap = await apiFetch<BackendRoadmapOut>("/api/freshers/me/roadmaps/current");
+        return mapBackendRoadmap(roadmap);
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 404) return null;
+        throw error;
+      }
     },
   });
 }
 
 /**
- * Turns AI-generated roadmap JSON into roadmap/week/task rows. Demo-mode only
- * for now (writes to the in-memory demoStore) — real Supabase persistence is
- * a later phase, so there's no backend branch here yet.
- *
+ * Persists a freshly generated roadmap (diagnostic Mode A from onboarding, or
+ * adaptive Mode B after a task evaluation — see roadmap-creator-agent.ts).
+ * The backend has no endpoint to edit an existing roadmap's payload in place:
+ * posting again with a new client_roadmap_id creates the next `version` and
+ * auto-archives the previous one, which is exactly how task advancement works.
  * Writes the fresh result straight into the query cache with setQueryData
- * (rather than just invalidating) since the components reading it hold their
- * own `useRoadmap`/`useTasksForUser` subscriptions and this is the reliable
- * way to force them to re-render with the mutated demoStore state.
+ * (rather than just invalidating) since components hold their own `useRoadmap`
+ * subscription and this is the reliable way to force them to re-render.
  */
 export function useCreateRoadmapFromAgent() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (input: { userId: string; generated: GeneratedRoadmap }) => {
-      const roadmapId = demoId("roadmap");
-      const now = new Date().toISOString();
+    mutationFn: async (input: {
+      userId: string;
+      title: string;
+      targetRole: string;
+      payload: RoadmapPayload;
+    }): Promise<RoadmapRecord> => {
+      if (DEMO_MODE) {
+        const now = new Date().toISOString();
+        const previousVersion = demoStore.roadmaps.find((r) => r.user_id === input.userId)?.version ?? 0;
+        const roadmap: RoadmapRecord = {
+          id: demoId("roadmap"),
+          client_roadmap_id: demoId("client-roadmap"),
+          user_id: input.userId,
+          version: previousVersion + 1,
+          title: input.title,
+          target_role: input.targetRole,
+          status: "ACTIVE",
+          completion_pct: 0,
+          roadmap_payload: input.payload,
+          generated_at: now,
+          created_at: now,
+          updated_at: now,
+        };
+        demoStore.roadmaps = demoStore.roadmaps.filter((r) => r.user_id !== input.userId);
+        demoStore.roadmaps.push(roadmap);
+        return roadmap;
+      }
 
-      const roadmap: Roadmap = {
-        id: roadmapId,
-        user_id: input.userId,
-        title: input.generated.title,
-        total_weeks: input.generated.weeks.length,
-        status: "in_progress",
-        started_at: now,
-        target_completion_date: null,
-        created_at: now,
-      };
-
-      const weeks: RoadmapWeek[] = input.generated.weeks.map((w, i) => ({
-        id: demoId("week"),
-        roadmap_id: roadmapId,
-        week_number: w.weekNumber,
-        theme: w.theme,
-        summary: w.summary,
-        unlock_date: null,
-        status: i === 0 ? "active" : "locked",
-      }));
-
-      const tasks: Task[] = input.generated.weeks.map((w, i) => ({
-        id: demoId("task"),
-        roadmap_week_id: weeks[i].id,
-        title: w.task.title,
-        description: w.task.description,
-        requirements: w.task.requirements,
-        acceptance_criteria: w.task.acceptanceCriteria,
-        difficulty: w.task.difficulty,
-        estimated_hours: w.task.estimatedHours,
-        resources: w.task.resources,
-        deadline: null,
-        status: i === 0 ? "in_progress" : "not_started",
-        created_at: now,
-      }));
-
-      demoStore.roadmaps.push(roadmap);
-      demoStore.roadmapWeeks.push(...weeks);
-      demoStore.tasks.push(...tasks);
-
-      return input.userId;
+      const created = await apiFetch<BackendRoadmapOut>("/api/freshers/me/roadmaps", {
+        method: "POST",
+        body: JSON.stringify({
+          client_roadmap_id: generateUUID(),
+          title: input.title,
+          target_role: input.targetRole,
+          roadmap_payload: input.payload,
+        }),
+      });
+      return mapBackendRoadmap(created);
     },
-    onSuccess: (userId) => {
-      queryClient.setQueryData(["roadmap", userId], readDemoRoadmap(userId));
-      queryClient.setQueryData(["tasks-for-user", userId], demoTasksForUser(userId));
+    onSuccess: (roadmap) => {
+      queryClient.setQueryData(["roadmap", roadmap.user_id], roadmap);
     },
   });
 }
 
-/** Demo-mode only for now — see useCreateRoadmapFromAgent. */
-export function useCompleteTaskAndAdvance() {
+/**
+ * Marks the roadmap complete — step 3 of the Roadmap Completion Evaluation
+ * Agent's "PM handoff sequence" (agents/roadmap-completion.md): call this
+ * before submitting the final report via useCreateFinalReport.
+ */
+export function useCompleteRoadmap() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (input: { userId: string; taskId: string }) => {
-      const task = demoStore.tasks.find((t) => t.id === input.taskId);
-      if (!task) return;
-      task.status = "completed";
-
-      const week = demoStore.roadmapWeeks.find((w) => w.id === task.roadmap_week_id);
-      if (!week) return;
-      week.status = "completed";
-
-      const roadmap = demoStore.roadmaps.find((r) => r.id === week.roadmap_id);
-      const nextWeek = demoStore.roadmapWeeks
-        .filter((w) => w.roadmap_id === week.roadmap_id)
-        .sort((a, b) => a.week_number - b.week_number)
-        .find((w) => w.week_number === week.week_number + 1);
-
-      if (nextWeek) {
-        nextWeek.status = "active";
-        const nextTask = demoStore.tasks.find((t) => t.roadmap_week_id === nextWeek.id);
-        if (nextTask) nextTask.status = "in_progress";
-      } else if (roadmap) {
-        roadmap.status = "completed";
+    mutationFn: async (input: { userId: string; roadmapId: string }): Promise<RoadmapRecord> => {
+      if (DEMO_MODE) {
+        const roadmap = demoStore.roadmaps.find((r) => r.id === input.roadmapId);
+        if (!roadmap) throw new Error("Roadmap not found");
+        roadmap.status = "COMPLETED";
+        roadmap.completion_pct = 100;
+        return roadmap;
       }
 
-      return input.userId;
+      const completed = await apiFetch<BackendRoadmapOut>(`/api/freshers/me/roadmaps/${input.roadmapId}/complete`, {
+        method: "POST",
+      });
+      return mapBackendRoadmap(completed);
     },
-    onSuccess: (userId) => {
-      if (!userId) return;
-      queryClient.setQueryData(["roadmap", userId], readDemoRoadmap(userId));
-      queryClient.setQueryData(["tasks-for-user", userId], demoTasksForUser(userId));
+    onSuccess: (roadmap) => {
+      queryClient.setQueryData(["roadmap", roadmap.user_id], roadmap);
     },
   });
 }

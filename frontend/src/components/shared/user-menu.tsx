@@ -15,8 +15,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useUser } from "@/hooks/use-user";
-import { createClient } from "@/services/supabase/client";
-import { DEMO_MODE } from "@/utils/demo-mode";
+import { logout } from "@/services/queries/users";
 import { ROLE_LABELS } from "@/utils/constants";
 
 function initials(name: string | null) {
@@ -33,11 +32,8 @@ export function UserMenu() {
   const router = useRouter();
   const { data: user } = useUser();
 
-  const handleSignOut = async () => {
-    if (!DEMO_MODE) {
-      const supabase = createClient();
-      await supabase.auth.signOut();
-    }
+  const handleSignOut = () => {
+    logout();
     router.replace("/login");
     router.refresh();
   };

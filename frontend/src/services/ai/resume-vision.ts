@@ -1,4 +1,4 @@
-import { getOpenAIClient, DEFAULT_MODEL } from "@/services/ai/openai-client";
+import { getOpenAIClient, hasOpenAIKey, DEFAULT_MODEL } from "@/services/ai/openai-client";
 import { DEMO_MODE } from "@/utils/demo-mode";
 
 const DEMO_RESUME_TEXT =
@@ -14,7 +14,7 @@ export async function fileToDataUrl(file: File): Promise<string> {
 }
 
 export async function extractResumeTextFromImage(dataUrl: string): Promise<string> {
-  if (DEMO_MODE) {
+  if (DEMO_MODE || !hasOpenAIKey()) {
     return DEMO_RESUME_TEXT;
   }
 
