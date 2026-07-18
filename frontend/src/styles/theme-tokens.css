@@ -1,0 +1,79 @@
+:root {
+  --background: 0 0% 100%;
+  --foreground: 240 10% 12%;
+
+  --card: 0 0% 100%;
+  --card-foreground: 240 10% 12%;
+
+  --popover: 0 0% 100%;
+  --popover-foreground: 240 10% 12%;
+
+  --primary: 249 95% 65%;
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 240 5% 96%;
+  --secondary-foreground: 240 10% 12%;
+
+  --muted: 240 5% 96%;
+  --muted-foreground: 240 4% 46%;
+
+  --accent: 249 90% 96%;
+  --accent-foreground: 249 60% 30%;
+
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
+
+  --success: 152 60% 40%;
+  --success-foreground: 0 0% 100%;
+
+  --warning: 38 92% 50%;
+  --warning-foreground: 20 40% 15%;
+
+  --danger: 0 84% 60%;
+  --danger-foreground: 0 0% 100%;
+
+  --border: 240 6% 90%;
+  --input: 240 6% 90%;
+  --ring: 249 95% 65%;
+
+  --radius: 1rem;
+}
+
+.dark {
+  --background: 240 16% 7%;
+  --foreground: 240 10% 94%;
+
+  --card: 240 14% 10%;
+  --card-foreground: 240 10% 94%;
+
+  --popover: 240 14% 10%;
+  --popover-foreground: 240 10% 94%;
+
+  --primary: 249 95% 70%;
+  --primary-foreground: 240 16% 7%;
+
+  --secondary: 240 10% 16%;
+  --secondary-foreground: 240 10% 94%;
+
+  --muted: 240 10% 16%;
+  --muted-foreground: 240 5% 65%;
+
+  --accent: 249 40% 20%;
+  --accent-foreground: 249 90% 88%;
+
+  --destructive: 0 70% 55%;
+  --destructive-foreground: 0 0% 100%;
+
+  --success: 152 50% 45%;
+  --success-foreground: 0 0% 100%;
+
+  --warning: 38 85% 55%;
+  --warning-foreground: 20 40% 12%;
+
+  --danger: 0 70% 55%;
+  --danger-foreground: 0 0% 100%;
+
+  --border: 240 10% 20%;
+  --input: 240 10% 20%;
+  --ring: 249 95% 70%;
+}

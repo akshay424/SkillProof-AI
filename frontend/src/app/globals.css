@@ -1,0 +1,31 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import "../styles/theme-tokens.css";
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  .glass {
+    @apply border border-white/10 bg-white/60 shadow-xl backdrop-blur-xl dark:bg-zinc-900/60;
+  }
+
+  .app-gradient-backdrop {
+    background-image:
+      radial-gradient(circle at 15% 10%, hsl(var(--primary) / 0.16), transparent 45%),
+      radial-gradient(circle at 85% 0%, hsl(var(--accent) / 0.25), transparent 40%),
+      radial-gradient(circle at 50% 100%, hsl(var(--primary) / 0.08), transparent 50%);
+  }
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+  }
+}
