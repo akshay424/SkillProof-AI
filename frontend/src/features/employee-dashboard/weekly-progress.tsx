@@ -14,7 +14,7 @@ export function WeeklyProgress({ userId }: { userId: string | undefined }) {
   const percent = weeks.length > 0 ? Math.round((completedWeeks / weeks.length) * 100) : 0;
 
   return (
-    <GlassCard className="flex h-full flex-col justify-between p-6">
+    <GlassCard className="p-6">
       <div className="mb-4 flex items-center justify-between">
         <h3 className="font-semibold">Weekly Progress</h3>
         {!isLoading && (
