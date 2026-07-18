@@ -1,30 +1,28 @@
 "use client";
 
 import { FileText, Loader2, Sparkles, Upload } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { toast } from "sonner";
 
 import { GlassCard } from "@/components/shared/glass-card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { readResume } from "@/services/ai/resume-reader-agent";
-import { runRoadmapCreatorAgent } from "@/services/ai/roadmap-creator-agent";
+import { generateRoadmap } from "@/services/ai/roadmap-agent";
 import { extractResumeTextFromImage, fileToDataUrl } from "@/services/ai/resume-vision";
 import { extractTextFromPdf } from "@/services/pdf/extract-text";
 import { useCreateRoadmapFromAgent } from "@/services/queries/roadmaps";
 import { useUpdateUserProfile } from "@/services/queries/users";
-import { validateResumeFile, validateRoadmapRequest } from "@/services/validation/skillflow";
+import { validateGeneratedRoadmap, validateResumeFile, validateRoadmapRequest } from "@/services/validation/skillflow";
 import type { UserProfile } from "@/types/user";
 
-const DEFAULT_TARGET_ROLE = "AI Product Developer";
-
-export function OnboardingCard({ authId, profile }: { authId: string; profile: UserProfile }) {
+export function OnboardingCard({ profile }: { profile: UserProfile }) {
   const [resumeText, setResumeText] = useState(profile.resume_text ?? "");
   const [resumeFileName, setResumeFileName] = useState<string | null>(profile.resume_text ? "Resume on file" : null);
   const [interviewNotes, setInterviewNotes] = useState(profile.interview_notes ?? "");
   const [parsing, setParsing] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const pendingRoadmapId = useRef<string | null>(null);
 
   const updateProfile = useUpdateUserProfile();
   const createRoadmap = useCreateRoadmapFromAgent();
@@ -64,7 +62,6 @@ export function OnboardingCard({ authId, profile }: { authId: string; profile: U
   });
 
   const canGenerate = resumeText.trim().length > 0 && interviewNotes.trim().length > 0;
-  const targetRole = profile.target_role ?? DEFAULT_TARGET_ROLE;
 
   const handleGenerate = async () => {
     const validationMessage = validateRoadmapRequest(resumeText, interviewNotes);
@@ -74,34 +71,23 @@ export function OnboardingCard({ authId, profile }: { authId: string; profile: U
     }
     setGenerating(true);
     try {
+      const generated = await generateRoadmap(resumeText, interviewNotes);
+      const roadmapValidationMessage = validateGeneratedRoadmap(generated);
+      if (roadmapValidationMessage) throw new Error(roadmapValidationMessage);
       await updateProfile.mutateAsync({
         id: profile.id,
-        updates: { resume_text: resumeText, interview_notes: interviewNotes, target_role: targetRole },
+        updates: { resume_text: resumeText, interview_notes: interviewNotes },
+        resumeSummary: generated.resumeAnalysis ?? { resume_text: resumeText },
+        interviewEvaluation: { overall: interviewNotes },
       });
-
-      const resumeReader = await readResume(resumeText, {
-        employeeId: authId,
-        employeeName: profile.full_name ?? "Fresher",
-        employeeType: "fresher",
-      });
-      const payload = await runRoadmapCreatorAgent({
-        employeeId: authId,
-        employeeName: profile.full_name ?? "Fresher",
-        targetRole,
-        resumeReader,
-        interviewNotes,
-      });
-
-      if (!payload.current_task?.task_title) {
-        throw new Error("AI returned an incomplete roadmap. Please try again.");
-      }
-
-      await createRoadmap.mutateAsync({
-        userId: authId,
-        title: payload.first_day_roadmap.goal || "First Day Diagnostic Roadmap",
-        targetRole,
-        payload,
-      });
+      const storageKey = `skillflow:roadmap-request:${profile.id}`;
+      const persistedId = typeof window === "undefined" ? null : window.sessionStorage.getItem(storageKey);
+      const requestId = pendingRoadmapId.current ?? persistedId ?? `web-roadmap-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+      pendingRoadmapId.current = requestId;
+      if (typeof window !== "undefined") window.sessionStorage.setItem(storageKey, requestId);
+      await createRoadmap.mutateAsync({ userId: profile.id, generated, clientRoadmapId: requestId });
+      pendingRoadmapId.current = null;
+      if (typeof window !== "undefined") window.sessionStorage.removeItem(storageKey);
 
       toast.success("Your roadmap is ready");
     } catch (error) {
@@ -121,7 +107,7 @@ export function OnboardingCard({ authId, profile }: { authId: string; profile: U
           <h2 className="font-semibold">Welcome — let&apos;s build your roadmap</h2>
           <p className="text-sm text-muted-foreground">
             Upload your resume and add the interview evaluation notes. AI will generate your
-            personalized first-day diagnostic roadmap.
+            personalized 8-week project readiness roadmap.
           </p>
         </div>
       </div>

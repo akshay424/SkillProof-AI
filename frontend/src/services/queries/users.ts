@@ -3,7 +3,7 @@ import { usePathname } from "next/navigation";
 
 import { demoStore } from "@/mocks/demo-store";
 import { MOCK_FRESHER, MOCK_PM } from "@/mocks/fixtures";
-import { apiFetch, ApiError } from "@/services/api-client";
+import { apiFetch } from "@/services/api-client";
 import { normalizeBackendUser, type BackendUserResponse } from "@/services/backend/types";
 import { DEMO_MODE } from "@/utils/demo-mode";
 import type { UserProfile } from "@/types/user";
@@ -18,6 +18,27 @@ interface BackendFresherProfile {
   updated_at: string;
 }
 
+export interface PmFresherOverview {
+  fresher: BackendUserResponse;
+  profile: BackendFresherProfile | null;
+  current_roadmap: {
+    id: string;
+    title: string | null;
+    status: string;
+    completion_pct: number;
+    roadmap_payload: Record<string, unknown> | null;
+  } | null;
+  latest_daily_report: {
+    overall_score: number | null;
+    needs_human_interaction: boolean;
+    report_payload: Record<string, unknown> | null;
+    created_at: string;
+  } | null;
+  latest_weekly_report: { overall_score: number | null; report_payload: Record<string, unknown> | null; created_at: string } | null;
+  final_report: { overall_score: number | null; report_payload: Record<string, unknown> | null; created_at: string } | null;
+  insights?: Record<string, unknown>;
+}
+
 function textFromValue(value: unknown, preferredKey?: string): string | null {
   if (typeof value === "string") return value;
   if (value && typeof value === "object" && preferredKey && typeof (value as Record<string, unknown>)[preferredKey] === "string") {
@@ -26,12 +47,16 @@ function textFromValue(value: unknown, preferredKey?: string): string | null {
   return null;
 }
 
+function metadataString(metadata: Record<string, unknown> | null | undefined, key: string): string | null {
+  const value = metadata?.[key];
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
 function backendProfileToUserProfile(
   user: { id: string; name: string; role: UserProfile["role"] },
   profile?: BackendFresherProfile | null,
 ): UserProfile {
   const now = new Date().toISOString();
-  const targetRole = profile?.target_role ?? (user.role === "fresher" ? "AI Product Developer" : null);
   return {
     id: user.id,
     organization_id: null,
@@ -39,11 +64,11 @@ function backendProfileToUserProfile(
     avatar_url: null,
     role: user.role,
     pm_id: null,
-    job_title: targetRole,
-    target_role: targetRole,
-    gitlab_token: null,
-    // Repository details are not persisted by the v2 backend yet.
-    gitlab_repo_url: null,
+    job_title: profile?.target_role ?? (user.role === "fresher" ? "AI Product Developer" : null),
+    // Repository details live inside the profile's free-form profile_metadata
+    // JSON — the v2 backend has no dedicated columns for them.
+    gitlab_token: metadataString(profile?.profile_metadata, "gitlab_token"),
+    gitlab_repo_url: metadataString(profile?.profile_metadata, "gitlab_repo_url"),
     resume_text: textFromValue(profile?.resume_summary, "resume_text"),
     interview_notes: textFromValue(profile?.interview_evaluation, "overall"),
     created_at: profile?.created_at ?? now,
@@ -80,19 +105,88 @@ export function useCurrentUser() {
           profile: backendProfileToUserProfile(user, profile),
         };
       } catch (error) {
-        if (error instanceof ApiError && error.status === 401) return null;
+        if (error instanceof Error && "status" in error && error.status === 401) return null;
         throw error;
       }
     },
   });
 }
 
-/**
- * Updates the fresher's profile. The v2 backend stores the target role plus
- * resume/interview evaluation JSON; repository details and avatar are not
- * persisted. Accepts either `target_role` or `job_title` in `updates` (both
- * map to the backend's target_role column).
- */
+export function useOrgMembers(organizationId: string | undefined) {
+  return useQuery({
+    queryKey: ["org-members", organizationId],
+    enabled: DEMO_MODE || !!organizationId,
+    queryFn: async (): Promise<UserProfile[]> => {
+      if (DEMO_MODE) return demoStore.users;
+      // The v2 backend does not expose organization-wide membership.
+      return [];
+    },
+  });
+}
+
+export function usePmFreshers(pmId: string | undefined) {
+  return useQuery({
+    queryKey: ["pm-freshers", pmId],
+    enabled: DEMO_MODE || !!pmId,
+    refetchInterval: DEMO_MODE ? false : 20_000,
+    queryFn: async (): Promise<UserProfile[]> => {
+      if (DEMO_MODE) return demoStore.users.filter((u) => u.role === "fresher" && u.pm_id === pmId);
+      const freshers = await apiFetch<BackendUserResponse[]>("/api/pm/freshers");
+      return freshers.flatMap((fresher) => {
+        const user = normalizeBackendUser(fresher);
+        return user ? [backendProfileToUserProfile(user)] : [];
+      });
+    },
+  });
+}
+
+export function useUnassignedFreshers(organizationId: string | undefined) {
+  return useQuery({
+    queryKey: ["unassigned-freshers", organizationId],
+    enabled: DEMO_MODE || !!organizationId,
+    queryFn: async (): Promise<UserProfile[]> => {
+      if (DEMO_MODE) return demoStore.users.filter((u) => u.role === "fresher" && !u.pm_id);
+      // Assignment is backend-owned and the supplied API has no unassigned list endpoint.
+      return [];
+    },
+  });
+}
+
+export function useUserProfileById(id: string | undefined) {
+  return useQuery({
+    queryKey: ["user-profile", id],
+    enabled: DEMO_MODE || !!id,
+    queryFn: async (): Promise<UserProfile | null> => {
+      if (DEMO_MODE) return demoStore.users.find((m) => m.id === id) ?? null;
+      try {
+        const overview = await apiFetch<{ fresher: BackendUserResponse; profile?: BackendFresherProfile }>(`/api/pm/freshers/${id}/overview`);
+        const user = normalizeBackendUser(overview.fresher);
+        return user ? backendProfileToUserProfile(user, overview.profile) : null;
+      } catch (error) {
+        if (error instanceof Error && "status" in error && error.status === 404) return null;
+        throw error;
+      }
+    },
+  });
+}
+
+export function usePmFresherOverview(id: string | undefined) {
+  return useQuery({
+    queryKey: ["pm-fresher-overview", id],
+    enabled: !!id && !DEMO_MODE,
+    refetchInterval: 20_000,
+    queryFn: () => apiFetch<PmFresherOverview>(`/api/pm/freshers/${id}/overview`),
+  });
+}
+
+function invalidateProfileQueries(queryClient: ReturnType<typeof useQueryClient>) {
+  queryClient.invalidateQueries({ queryKey: ["current-user"], refetchType: "all" });
+  queryClient.invalidateQueries({ queryKey: ["org-members"], refetchType: "all" });
+  queryClient.invalidateQueries({ queryKey: ["pm-freshers"], refetchType: "all" });
+  queryClient.invalidateQueries({ queryKey: ["unassigned-freshers"], refetchType: "all" });
+  queryClient.invalidateQueries({ queryKey: ["user-profile"], refetchType: "all" });
+}
+
 export function useUpdateUserProfile() {
   const queryClient = useQueryClient();
 
@@ -103,25 +197,64 @@ export function useUpdateUserProfile() {
       resumeSummary?: unknown;
       interviewEvaluation?: unknown;
     }) => {
-      if (DEMO_MODE) {
-        const idx = demoStore.users.findIndex((u) => u.id === input.id);
-        if (idx !== -1) {
-          demoStore.users[idx] = { ...demoStore.users[idx], ...input.updates };
+      if (!DEMO_MODE) {
+        // Only send the fields actually being changed so a profile-settings
+        // save can't null out the stored resume/interview evaluation and a
+        // roadmap-generation save can't reset a custom target role.
+        const body: Record<string, unknown> = {};
+        if (input.updates.job_title !== undefined) {
+          body.target_role = input.updates.job_title ?? "AI Product Developer";
         }
+        if (input.resumeSummary !== undefined || input.updates.resume_text !== undefined) {
+          body.resume_summary = input.resumeSummary
+            ?? (input.updates.resume_text ? { resume_text: input.updates.resume_text } : null);
+        }
+        if (input.interviewEvaluation !== undefined || input.updates.interview_notes !== undefined) {
+          body.interview_evaluation = input.interviewEvaluation
+            ?? (input.updates.interview_notes ? { overall: input.updates.interview_notes } : null);
+        }
+        if (input.updates.gitlab_token !== undefined || input.updates.gitlab_repo_url !== undefined) {
+          // The backend replaces profile_metadata wholesale (no deep merge),
+          // so always send the full object merged with the current values.
+          const cached = queryClient.getQueryData<{ profile: UserProfile } | null>(["current-user"]);
+          const current = cached?.profile;
+          body.profile_metadata = {
+            gitlab_token: input.updates.gitlab_token !== undefined
+              ? input.updates.gitlab_token
+              : current?.gitlab_token ?? null,
+            gitlab_repo_url: input.updates.gitlab_repo_url !== undefined
+              ? input.updates.gitlab_repo_url
+              : current?.gitlab_repo_url ?? null,
+          };
+        }
+
+        await apiFetch("/api/freshers/me/profile", {
+          method: "PATCH",
+          body: JSON.stringify(body),
+        });
         return;
       }
 
-      await apiFetch("/api/freshers/me/profile", {
-        method: "PATCH",
-        body: JSON.stringify({
-          target_role: input.updates.target_role ?? input.updates.job_title ?? "AI Product Developer",
-          resume_summary: input.resumeSummary ?? (input.updates.resume_text ? { resume_text: input.updates.resume_text } : null),
-          interview_evaluation: input.interviewEvaluation ?? (input.updates.interview_notes ? { overall: input.updates.interview_notes } : null),
-        }),
-      });
+      const idx = demoStore.users.findIndex((u) => u.id === input.id);
+      if (idx !== -1) {
+        demoStore.users[idx] = { ...demoStore.users[idx], ...input.updates };
+      }
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["current-user"], refetchType: "all" });
+    onSuccess: () => invalidateProfileQueries(queryClient),
+  });
+}
+
+export function useClaimFresher() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: { fresherId: string; pmId: string }) => {
+      if (!DEMO_MODE) throw new Error("The backend does not provide a fresher-assignment endpoint.");
+      const idx = demoStore.users.findIndex((u) => u.id === input.fresherId);
+      if (idx !== -1) {
+        demoStore.users[idx] = { ...demoStore.users[idx], pm_id: input.pmId };
+      }
     },
+    onSuccess: () => invalidateProfileQueries(queryClient),
   });
 }

@@ -10,66 +10,69 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { useUser } from "@/hooks/use-user";
-import { runWeeklyEvaluationAgent } from "@/services/ai/weekly-evaluation-agent";
-import { runRoadmapCompletionAgent } from "@/services/ai/roadmap-completion-agent";
-import { useCompleteRoadmap, useRoadmap } from "@/services/queries/roadmaps";
-import { useCreateFinalReport, useCreateWeeklyReport, useDailyReportPayloads, useWeeklyReportPayloads } from "@/services/queries/reports";
+import { synthesizePeriodReport } from "@/services/ai/report-agent";
+import { useRoadmap } from "@/services/queries/roadmaps";
+import { useEvaluationReports, useSubmitPeriodReport } from "@/services/queries/reports";
+import { validateReportScore } from "@/services/validation/skillflow";
 
 export function PeriodReportButtons({ userId }: { userId: string | undefined }) {
-  const { data: user } = useUser();
-  const { data: dailyReports } = useDailyReportPayloads(userId);
-  const { data: weeklyReports } = useWeeklyReportPayloads(userId);
+  const { data: reports } = useEvaluationReports(userId);
   const { data: roadmap } = useRoadmap(userId);
-  const createWeeklyReport = useCreateWeeklyReport();
-  const createFinalReport = useCreateFinalReport();
-  const completeRoadmap = useCompleteRoadmap();
+  const createReport = useSubmitPeriodReport();
   const [generating, setGenerating] = useState<"weekly" | "final" | null>(null);
 
-  const hasEvaluatedTask = (dailyReports?.length ?? 0) > 0;
-  const canGenerateWeekly = !!userId && !!roadmap && hasEvaluatedTask;
-  const canGenerateFinal = !!userId && !!roadmap && hasEvaluatedTask && roadmap.status !== "COMPLETED";
+  const taskReports = reports?.filter((r) => r.report_type === "task") ?? [];
+  const canGenerateWeekly = !!userId && taskReports.length > 0;
+  const canGenerateFinal = !!userId && roadmap?.status === "completed" && taskReports.length > 0;
 
-  const handleGenerateWeekly = async () => {
-    if (!userId || !roadmap || !dailyReports) return;
-    setGenerating("weekly");
-    try {
-      const report = await runWeeklyEvaluationAgent({
-        employeeId: userId,
-        employeeName: user?.profile.full_name ?? "Fresher",
-        roadmapId: roadmap.id,
-        roadmapTitle: roadmap.title ?? "Roadmap",
-        dailyReports,
-      });
-      await createWeeklyReport.mutateAsync({ userId, roadmapId: roadmap.id, report });
-      toast.success("Weekly report generated");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to generate weekly report");
-    } finally {
-      setGenerating(null);
+  const handleGenerate = async (type: "weekly" | "final") => {
+    if (!userId) {
+      toast.error("Your session is not ready. Please sign in again.");
+      return;
     }
-  };
-
-  const handleGenerateFinal = async () => {
-    if (!userId || !roadmap || !dailyReports) return;
-    setGenerating("final");
+    if (!roadmap) {
+      toast.error("Create a roadmap before generating a report.");
+      return;
+    }
+    if (taskReports.length === 0) {
+      toast.error("Complete at least one task evaluation before generating a report.");
+      return;
+    }
+    if (type === "final" && roadmap.status !== "completed") {
+      toast.error("The final report is available only after the roadmap is completed.");
+      return;
+    }
+    const weekStart = new Date();
+    weekStart.setHours(0, 0, 0, 0);
+    weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
+    const existingReport = reports?.some((report) => {
+      if (report.roadmap_id !== roadmap.id || report.report_type !== type) return false;
+      if (type === "final") return true;
+      return new Date(report.generated_at) >= weekStart;
+    });
+    if (existingReport) {
+      toast.info(type === "weekly" ? "This week’s report has already been generated." : "The final roadmap report has already been generated.");
+      return;
+    }
+    setGenerating(type);
     try {
-      const report = await runRoadmapCompletionAgent({
-        employeeId: userId,
-        employeeName: user?.profile.full_name ?? "Fresher",
-        roadmap,
-        dailyReports,
-        weeklyReports: weeklyReports ?? [],
+      const source = taskReports;
+      const synthesis = await synthesizePeriodReport(source);
+      const scoreValidationMessage = validateReportScore(synthesis.overallScore);
+      if (scoreValidationMessage) throw new Error(scoreValidationMessage);
+
+      await createReport.mutateAsync({
+        userId,
+        roadmapId: roadmap.id,
+        type,
+        summary: synthesis.summary,
+        overallScore: synthesis.overallScore,
+        sourceReports: source,
       });
 
-      // agents/roadmap-completion.md's PM handoff sequence: mark the roadmap
-      // complete first, then submit the final report.
-      await completeRoadmap.mutateAsync({ userId, roadmapId: roadmap.id });
-      await createFinalReport.mutateAsync({ userId, roadmapId: roadmap.id, report });
-
-      toast.success("Final report generated");
+      toast.success(type === "weekly" ? "Weekly report generated" : "Final report generated");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to generate final report");
+      toast.error(error instanceof Error ? error.message : "Failed to generate report");
     } finally {
       setGenerating(null);
     }
@@ -84,7 +87,7 @@ export function PeriodReportButtons({ userId }: { userId: string | undefined }) 
               variant="outline"
               size="sm"
               disabled={!canGenerateWeekly || generating !== null}
-              onClick={handleGenerateWeekly}
+              onClick={() => handleGenerate("weekly")}
             >
               {generating === "weekly" ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -107,7 +110,7 @@ export function PeriodReportButtons({ userId }: { userId: string | undefined }) 
               variant="outline"
               size="sm"
               disabled={!canGenerateFinal || generating !== null}
-              onClick={handleGenerateFinal}
+              onClick={() => handleGenerate("final")}
             >
               {generating === "final" ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -119,11 +122,7 @@ export function PeriodReportButtons({ userId }: { userId: string | undefined }) 
           </span>
         </TooltipTrigger>
         {!canGenerateFinal && (
-          <TooltipContent>
-            {roadmap?.status === "COMPLETED"
-              ? "This roadmap is already complete."
-              : "Complete at least one task evaluation first."}
-          </TooltipContent>
+          <TooltipContent>Complete the roadmap and at least one task evaluation first.</TooltipContent>
         )}
       </Tooltip>
     </div>

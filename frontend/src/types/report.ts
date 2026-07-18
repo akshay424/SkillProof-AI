@@ -29,3 +29,10 @@ export interface SkillScore {
   source: "diagnostic" | "task_evaluation" | "viva";
   recorded_at: string;
 }
+
+export interface VivaQuestion {
+  question: string;
+  answer: string | null;
+  followUp: string | null;
+  followUpAnswer: string | null;
+}

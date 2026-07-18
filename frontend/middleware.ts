@@ -1,10 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-// Auth is an HttpOnly cookie session (see services/backend/session.ts). Route
-// protection is enforced server-side inside each route group's layout via
-// getBackendSessionUser(), so middleware is a passthrough.
-export function middleware(_request: NextRequest) {
-  return NextResponse.next();
+import { updateSession } from "@/services/supabase/middleware";
+import { DEMO_MODE } from "@/utils/demo-mode";
+
+export async function middleware(request: NextRequest) {
+  if (DEMO_MODE) {
+    return NextResponse.next();
+  }
+  return updateSession(request);
 }
 
 export const config = {

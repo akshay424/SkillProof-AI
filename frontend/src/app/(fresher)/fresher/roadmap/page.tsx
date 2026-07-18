@@ -11,7 +11,7 @@ export default function FresherRoadmapPage() {
       <div>
         <h2 className="text-xl font-semibold tracking-tight">Your Roadmap</h2>
         <p className="text-sm text-muted-foreground">
-          Your personalized first-day diagnostic tasks, generated from your resume and interview notes.
+          An 8-week personalized path from Flutter fundamentals to a capstone project.
         </p>
       </div>
       <RoadmapTimeline userId={user?.authId} />

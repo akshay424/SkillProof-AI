@@ -25,7 +25,7 @@ export default function FresherDashboardPage() {
       {roadmapLoading ? (
         <Skeleton className="h-72 w-full rounded-2xl" />
       ) : !roadmap ? (
-        user && <OnboardingCard authId={user.authId} profile={user.profile} />
+        user && <OnboardingCard profile={user.profile} />
       ) : (
         <>
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">

@@ -26,9 +26,5 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
     throw new ApiError(response.status, body.detail ?? "Request failed");
   }
 
-  if (response.status === 204) {
-    return undefined as T;
-  }
-
   return response.json() as Promise<T>;
 }
