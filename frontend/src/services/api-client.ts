@@ -1,7 +1,3 @@
-import { createClient } from "@/services/supabase/client";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -12,17 +8,15 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Calls the same-origin backend proxy. The FastAPI JWT stays in an HttpOnly
+ * cookie and is attached to the upstream request only on the Next.js server.
+ */
 export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const supabase = createClient();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  const response = await fetch(`${API_URL}${path}`, {
+  const response = await fetch(`/api/backend${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
-      ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
       ...init.headers,
     },
   });

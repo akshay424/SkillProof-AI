@@ -15,7 +15,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useUser } from "@/hooks/use-user";
-import { createClient } from "@/services/supabase/client";
 import { DEMO_MODE } from "@/utils/demo-mode";
 import { ROLE_LABELS } from "@/utils/constants";
 
@@ -35,8 +34,7 @@ export function UserMenu() {
 
   const handleSignOut = async () => {
     if (!DEMO_MODE) {
-      const supabase = createClient();
-      await supabase.auth.signOut();
+      await fetch("/api/session/logout", { method: "POST" });
     }
     router.replace("/login");
     router.refresh();

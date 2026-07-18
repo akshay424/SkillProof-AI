@@ -1,17 +1,13 @@
-import type { Metadata } from "next";
+import Link from "next/link";
 
-import { ResetPasswordForm } from "@/features/auth/reset-password-form";
-
-export const metadata: Metadata = { title: "Set new password — SkillProof AI" };
+export const metadata = { title: "Password support — SkillProof AI" };
 
 export default function ResetPasswordPage() {
   return (
-    <div className="space-y-6">
-      <div className="space-y-1 text-center">
-        <h2 className="text-lg font-semibold">Set a new password</h2>
-        <p className="text-sm text-muted-foreground">Choose a strong password for your account.</p>
-      </div>
-      <ResetPasswordForm />
+    <div className="space-y-4 text-center">
+      <h2 className="text-lg font-semibold">Password reset is unavailable</h2>
+      <p className="text-sm text-muted-foreground">Please contact your administrator to reset a backend account.</p>
+      <Link href="/login" className="text-sm font-medium text-primary hover:underline">Back to sign in</Link>
     </div>
   );
 }

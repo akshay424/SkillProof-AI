@@ -1,25 +1,60 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { MOCK_EMPLOYEE, MOCK_TASKS } from "@/mocks/fixtures";
-import { createClient } from "@/services/supabase/client";
+import { demoStore } from "@/mocks/demo-store";
+import { apiFetch } from "@/services/api-client";
 import { DEMO_MODE } from "@/utils/demo-mode";
+import type { GeneratedRoadmap } from "@/services/ai/roadmap-agent";
 import type { Task } from "@/types/task";
+
+interface BackendRoadmapWithPayload {
+  id: string;
+  roadmap_payload: {
+    generated_roadmap?: GeneratedRoadmap;
+    current_task?: { task_id: string };
+  } | null;
+}
+
+function tasksFromBackendRoadmap(roadmap: BackendRoadmapWithPayload): Task[] {
+  const weeks = roadmap.roadmap_payload?.generated_roadmap?.weeks ?? [];
+  const now = new Date().toISOString();
+  return weeks.map((week, index) => ({
+    id: index === 0
+      ? roadmap.roadmap_payload?.current_task?.task_id ?? `${roadmap.id}-task-${week.weekNumber}`
+      : `${roadmap.id}-task-${week.weekNumber}`,
+    roadmap_week_id: `${roadmap.id}-week-${week.weekNumber}`,
+    title: week.task.title,
+    description: week.task.description,
+    requirements: week.task.requirements,
+    acceptance_criteria: week.task.acceptanceCriteria,
+    difficulty: week.task.difficulty,
+    estimated_hours: week.task.estimatedHours,
+    resources: week.task.resources,
+    deadline: null,
+    status: index === 0 ? "in_progress" : "not_started",
+    created_at: now,
+  }));
+}
+
+export function demoTasksForUser(userId: string): Task[] {
+  const roadmapIds = demoStore.roadmaps.filter((r) => r.user_id === userId).map((r) => r.id);
+  const weekIds = demoStore.roadmapWeeks.filter((w) => roadmapIds.includes(w.roadmap_id)).map((w) => w.id);
+  return demoStore.tasks.filter((t) => weekIds.includes(t.roadmap_week_id));
+}
 
 export function useTasksForUser(userId: string | undefined) {
   return useQuery({
     queryKey: ["tasks-for-user", userId],
     enabled: DEMO_MODE || !!userId,
     queryFn: async (): Promise<Task[]> => {
-      if (DEMO_MODE) return userId === MOCK_EMPLOYEE.id ? MOCK_TASKS : [];
+      if (DEMO_MODE) return userId ? demoTasksForUser(userId) : [];
 
-      const supabase = createClient();
-      const { data, error } = await supabase
-        .from("tasks")
-        .select("*, roadmap_weeks!inner(roadmap_id, roadmaps!inner(user_id))")
-        .eq("roadmap_weeks.roadmaps.user_id", userId!)
-        .order("created_at", { ascending: true });
-      if (error) throw error;
-      return data as unknown as Task[];
+      try {
+        const roadmap = await apiFetch<BackendRoadmapWithPayload>("/api/freshers/me/roadmaps/current");
+        return tasksFromBackendRoadmap(roadmap);
+      } catch (error) {
+        if (error instanceof Error && "status" in error && error.status === 404) return [];
+        throw error;
+      }
     },
   });
 }
@@ -43,21 +78,31 @@ export function useTasksForUsers(userIds: string[]) {
     enabled: DEMO_MODE || userIds.length > 0,
     queryFn: async (): Promise<TaskWithOwner[]> => {
       if (DEMO_MODE) {
-        return userIds.includes(MOCK_EMPLOYEE.id)
-          ? MOCK_TASKS.map((t) => ({
-              ...t,
-              roadmap_weeks: { roadmap_id: "wk", roadmaps: { user_id: MOCK_EMPLOYEE.id } },
-            }))
-          : [];
+        return userIds.flatMap((userId) => {
+          const roadmap = demoStore.roadmaps.find((r) => r.user_id === userId);
+          if (!roadmap) return [];
+          return demoTasksForUser(userId).map((t) => ({
+            ...t,
+            roadmap_weeks: { roadmap_id: roadmap.id, roadmaps: { user_id: userId } },
+          }));
+        });
       }
 
-      const supabase = createClient();
-      const { data, error } = await supabase
-        .from("tasks")
-        .select("*, roadmap_weeks!inner(roadmap_id, roadmaps!inner(user_id))")
-        .in("roadmap_weeks.roadmaps.user_id", userIds);
-      if (error) throw error;
-      return data as unknown as TaskWithOwner[];
+      const roadmaps = await Promise.all(userIds.map(async (userId) => {
+        try {
+          return await apiFetch<BackendRoadmapWithPayload>(`/api/pm/freshers/${userId}/roadmaps/current`);
+        } catch (error) {
+          if (error instanceof Error && "status" in error && error.status === 404) return null;
+          throw error;
+        }
+      }));
+      return roadmaps.flatMap((roadmap, index) => {
+        if (!roadmap) return [];
+        return tasksFromBackendRoadmap(roadmap).map((task) => ({
+          ...task,
+          roadmap_weeks: { roadmap_id: roadmap.id, roadmaps: { user_id: userIds[index] } },
+        }));
+      });
     },
   });
 }
