@@ -54,6 +54,7 @@ export default function FresherDrilldownPage({ params }: { params: Promise<{ id:
               <div className="flex items-center gap-2"><ClipboardCheck className="h-4 w-4 text-primary" /><h3 className="font-semibold">Latest Evaluation</h3></div>
               {overview.latest_daily_report ? <>
                 <Badge variant={(overview.latest_daily_report.overall_score ?? 0) >= 70 ? "secondary" : "outline"}>{overview.latest_daily_report.overall_score ?? "—"}/100</Badge>
+                {overview.latest_daily_report.needs_human_interaction && <Badge variant="outline">PM review recommended</Badge>}
                 <div className="flex flex-wrap gap-2">{skills.map((skill) => <Badge key={skill} variant="outline">{skill}</Badge>)}</div>
                 {gaps.length > 0 && <p className="text-sm text-muted-foreground">Focus: {gaps.join(", ")}</p>}
               </> : <p className="text-sm text-muted-foreground">No daily evaluation submitted.</p>}

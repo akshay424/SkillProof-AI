@@ -10,16 +10,24 @@ interface BackendRoadmapWithPayload {
   id: string;
   roadmap_payload: {
     generated_roadmap?: GeneratedRoadmap;
-    current_task?: { task_id: string };
+    current_task?: { task_id: string; task_title?: string };
   } | null;
 }
 
 function tasksFromBackendRoadmap(roadmap: BackendRoadmapWithPayload): Task[] {
   const weeks = roadmap.roadmap_payload?.generated_roadmap?.weeks ?? [];
   const now = new Date().toISOString();
+  const currentTask = roadmap.roadmap_payload?.current_task;
+  const detectedActiveIndex = weeks.findIndex((week) =>
+    currentTask?.task_id === `${roadmap.id}-task-${week.weekNumber}`
+    || (!!currentTask?.task_title && currentTask.task_title === week.task.title)
+  );
+  // Older roadmap payloads may have a backend task ID that is not derived from
+  // the generated week. Keep the persisted task ID while showing the first task.
+  const activeIndex = detectedActiveIndex >= 0 ? detectedActiveIndex : 0;
   return weeks.map((week, index) => ({
-    id: index === 0
-      ? roadmap.roadmap_payload?.current_task?.task_id ?? `${roadmap.id}-task-${week.weekNumber}`
+    id: index === activeIndex
+      ? currentTask?.task_id ?? `${roadmap.id}-task-${week.weekNumber}`
       : `${roadmap.id}-task-${week.weekNumber}`,
     roadmap_week_id: `${roadmap.id}-week-${week.weekNumber}`,
     title: week.task.title,
@@ -30,7 +38,7 @@ function tasksFromBackendRoadmap(roadmap: BackendRoadmapWithPayload): Task[] {
     estimated_hours: week.task.estimatedHours,
     resources: week.task.resources,
     deadline: null,
-    status: index === 0 ? "in_progress" : "not_started",
+    status: index === activeIndex ? "in_progress" : "not_started",
     created_at: now,
   }));
 }

@@ -15,7 +15,7 @@ import { useUpdateUserProfile } from "@/services/queries/users";
 import type { UserProfile } from "@/types/user";
 
 const profileSchema = z.object({
-  targetRole: z.string().min(2, "Enter a target role"),
+  targetRole: z.string().trim().min(2, "Enter a target role"),
 });
 
 type ProfileValues = z.infer<typeof profileSchema>;

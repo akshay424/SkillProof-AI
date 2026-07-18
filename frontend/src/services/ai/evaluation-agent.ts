@@ -6,6 +6,13 @@ export interface RepoFile {
   content: string;
 }
 
+export interface EvaluationTaskContext {
+  title: string;
+  description: string;
+  requirements: string[];
+  acceptanceCriteria: string[];
+}
+
 export interface CodeEvaluationResult {
   architecture: { pattern: string; verdict: string };
   folderStructure: { verdict: string };
@@ -47,11 +54,17 @@ const DEMO_EVALUATION: CodeEvaluationResult = {
   overallScore: 78,
 };
 
-export async function evaluateSubmission(files: RepoFile[]): Promise<CodeEvaluationResult> {
+export async function evaluateSubmission(
+  files: RepoFile[],
+  task: EvaluationTaskContext,
+): Promise<CodeEvaluationResult> {
   if (DEMO_MODE) {
     return DEMO_EVALUATION;
   }
 
-  const user = files.map((f) => `--- ${f.path} ---\n${f.content}`).join("\n\n");
+  const user = JSON.stringify({
+    assigned_task: task,
+    repository_files: files,
+  });
   return completeJSON<CodeEvaluationResult>("work_evaluation", user, SYSTEM_PROMPT);
 }

@@ -46,9 +46,16 @@ function normalizeRoadmapStatus(status: string): RoadmapStatus {
 function backendRoadmapToUi(roadmap: BackendRoadmap): RoadmapWithWeeks {
   const payload = roadmap.roadmap_payload as {
     generated_roadmap?: GeneratedRoadmap;
+    current_task?: BackendCurrentTask;
   } | null;
   const generated = payload?.generated_roadmap;
   const weeks = generated?.weeks ?? [];
+  const currentTask = payload?.current_task;
+  const detectedActiveIndex = weeks.findIndex((week) =>
+    currentTask?.task_id === `${roadmap.id}-task-${week.weekNumber}`
+    || (!!currentTask?.task_title && currentTask.task_title === week.task.title),
+  );
+  const activeIndex = detectedActiveIndex >= 0 ? detectedActiveIndex : 0;
 
   return {
     id: roadmap.id,
@@ -66,7 +73,7 @@ function backendRoadmapToUi(roadmap: BackendRoadmap): RoadmapWithWeeks {
       theme: week.theme,
       summary: week.summary,
       unlock_date: null,
-      status: index === 0 ? "active" : "locked",
+      status: index < activeIndex ? "completed" : index === activeIndex ? "active" : "locked",
     })),
   };
 }
@@ -135,9 +142,9 @@ export function useCreateRoadmapFromAgent() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (input: { userId: string; generated: GeneratedRoadmap }) => {
+    mutationFn: async (input: { userId: string; generated: GeneratedRoadmap; clientRoadmapId?: string }) => {
       if (!DEMO_MODE) {
-        const clientId = clientRoadmapId();
+        const clientId = input.clientRoadmapId ?? clientRoadmapId();
         const currentTask = firstCurrentTask(input.generated, clientId);
         const startDate = new Date();
         const targetDate = new Date(startDate);

@@ -101,6 +101,7 @@ export function useSubmitDailyReport() {
       evaluation: CodeEvaluationResult;
       synthesis: TaskReportSynthesis;
       qaItems: VivaQuestion[];
+      aiUsageDisclosure: { usedAi: boolean; details: string };
     }) => {
       if (DEMO_MODE) {
         const report: EvaluationReport = {
@@ -112,7 +113,11 @@ export function useSubmitDailyReport() {
           folder_structure: input.evaluation.folderStructure,
           problem_solving: input.evaluation.problemSolving,
           code_quality: input.evaluation.codeQuality,
-          ai_usage: input.evaluation.aiUsage,
+          ai_usage: {
+            used_ai: input.aiUsageDisclosure.usedAi,
+            details: input.aiUsageDisclosure.details || "Employee declared no AI assistance.",
+            review_signal: input.evaluation.aiUsage.verdict,
+          },
           evidence: input.evaluation.evidence,
           suggestions: input.synthesis.finalSuggestions,
           summary: input.synthesis.communicationVerdict,
@@ -131,7 +136,9 @@ export function useSubmitDailyReport() {
           roadmap_id: input.roadmapId,
           report_date: new Date().toISOString().slice(0, 10),
           overall_score: input.synthesis.overallScore,
-          needs_human_interaction: input.synthesis.overallScore < 50,
+          needs_human_interaction: input.synthesis.overallScore < 50
+            || input.synthesis.confidence < 0.6
+            || input.evaluation.confidence < 0.6,
           report_payload: {
             schema_version: "1.0",
             task_id: input.task.id,
@@ -140,10 +147,11 @@ export function useSubmitDailyReport() {
               reference: input.task.id,
             },
             ai_usage_disclosure: {
-              used_ai: input.evaluation.aiUsage.detected,
+              used_ai: input.aiUsageDisclosure.usedAi,
               tools: [],
-              what_ai_generated: "Not declared by the employee.",
-              what_employee_corrected: input.evaluation.aiUsage.verdict,
+              what_ai_generated: input.aiUsageDisclosure.details || "Employee declared no AI assistance.",
+              what_employee_corrected: "Not provided.",
+              review_signal: input.evaluation.aiUsage.verdict,
             },
             evaluation: {
               architecture: input.evaluation.architecture,
@@ -152,7 +160,9 @@ export function useSubmitDailyReport() {
               code_quality: input.evaluation.codeQuality,
               confidence: input.synthesis.confidence,
               suggestions: input.synthesis.finalSuggestions,
-              verified_skills: [input.skillName],
+              verified_skills: input.synthesis.overallScore >= 70 && input.synthesis.confidence >= 0.7
+                ? [input.skillName]
+                : [],
               weak_areas: input.synthesis.finalSuggestions.slice(0, 3),
               evidence: input.evaluation.evidence.filesReviewed,
               dashboard_update: {

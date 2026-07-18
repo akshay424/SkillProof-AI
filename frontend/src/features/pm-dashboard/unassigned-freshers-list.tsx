@@ -29,7 +29,10 @@ export function UnassignedFreshersList({
   }
 
   const handleClaim = async (fresherId: string, name: string | null) => {
-    if (!pmId) return;
+    if (!pmId) {
+      toast.error("Your PM session is not ready. Refresh the page and try again.");
+      return;
+    }
     try {
       await claimFresher.mutateAsync({ fresherId, pmId });
       toast.success(`${name ?? "Fresher"} added to your team`);

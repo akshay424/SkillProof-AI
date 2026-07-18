@@ -1,7 +1,7 @@
 "use client";
 
 import { FileText, Loader2, Sparkles, Upload } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { toast } from "sonner";
 
@@ -13,6 +13,7 @@ import { extractResumeTextFromImage, fileToDataUrl } from "@/services/ai/resume-
 import { extractTextFromPdf } from "@/services/pdf/extract-text";
 import { useCreateRoadmapFromAgent } from "@/services/queries/roadmaps";
 import { useUpdateUserProfile } from "@/services/queries/users";
+import { validateGeneratedRoadmap, validateResumeFile, validateRoadmapRequest } from "@/services/validation/skillflow";
 import type { UserProfile } from "@/types/user";
 
 export function OnboardingCard({ profile }: { profile: UserProfile }) {
@@ -21,6 +22,7 @@ export function OnboardingCard({ profile }: { profile: UserProfile }) {
   const [interviewNotes, setInterviewNotes] = useState(profile.interview_notes ?? "");
   const [parsing, setParsing] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const pendingRoadmapId = useRef<string | null>(null);
 
   const updateProfile = useUpdateUserProfile();
   const createRoadmap = useCreateRoadmapFromAgent();
@@ -28,12 +30,20 @@ export function OnboardingCard({ profile }: { profile: UserProfile }) {
   const onDrop = useCallback(async (files: File[]) => {
     const file = files[0];
     if (!file) return;
+    const validationMessage = validateResumeFile(file);
+    if (validationMessage) {
+      toast.error(validationMessage);
+      return;
+    }
 
     setParsing(true);
     try {
       const text = file.type === "application/pdf"
         ? await extractTextFromPdf(file)
         : await extractResumeTextFromImage(await fileToDataUrl(file));
+      if (text.trim().length < 80) {
+        throw new Error("We could not read enough resume content. Upload a clearer file or use a text-based PDF.");
+      }
       setResumeText(text);
       setResumeFileName(file.name);
       toast.success("Resume parsed");
@@ -54,16 +64,30 @@ export function OnboardingCard({ profile }: { profile: UserProfile }) {
   const canGenerate = resumeText.trim().length > 0 && interviewNotes.trim().length > 0;
 
   const handleGenerate = async () => {
+    const validationMessage = validateRoadmapRequest(resumeText, interviewNotes);
+    if (validationMessage) {
+      toast.error(validationMessage);
+      return;
+    }
     setGenerating(true);
     try {
       const generated = await generateRoadmap(resumeText, interviewNotes);
+      const roadmapValidationMessage = validateGeneratedRoadmap(generated);
+      if (roadmapValidationMessage) throw new Error(roadmapValidationMessage);
       await updateProfile.mutateAsync({
         id: profile.id,
         updates: { resume_text: resumeText, interview_notes: interviewNotes },
         resumeSummary: generated.resumeAnalysis ?? { resume_text: resumeText },
         interviewEvaluation: { overall: interviewNotes },
       });
-      await createRoadmap.mutateAsync({ userId: profile.id, generated });
+      const storageKey = `skillflow:roadmap-request:${profile.id}`;
+      const persistedId = typeof window === "undefined" ? null : window.sessionStorage.getItem(storageKey);
+      const requestId = pendingRoadmapId.current ?? persistedId ?? `web-roadmap-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+      pendingRoadmapId.current = requestId;
+      if (typeof window !== "undefined") window.sessionStorage.setItem(storageKey, requestId);
+      await createRoadmap.mutateAsync({ userId: profile.id, generated, clientRoadmapId: requestId });
+      pendingRoadmapId.current = null;
+      if (typeof window !== "undefined") window.sessionStorage.removeItem(storageKey);
 
       toast.success("Your roadmap is ready");
     } catch (error) {
@@ -135,6 +159,11 @@ export function OnboardingCard({ profile }: { profile: UserProfile }) {
           </>
         )}
       </Button>
+      {!canGenerate && (
+        <p className="text-center text-xs text-muted-foreground">
+          Add your resume and interview notes to enable roadmap generation.
+        </p>
+      )}
     </GlassCard>
   );
 }

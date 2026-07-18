@@ -5,6 +5,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -21,6 +22,8 @@ import { generateFollowUp, generateVivaQuestions } from "@/services/ai/viva-agen
 import { fetchRepoFiles } from "@/services/gitlab/fetch-repo";
 import { useCompleteTaskAndAdvance } from "@/services/queries/roadmaps";
 import { useSubmitDailyReport } from "@/services/queries/reports";
+import { useEvaluationReports } from "@/services/queries/reports";
+import { validateAiDisclosure, validateEmployeeAnswer, validateGitBranch, validateReportScore, validateRepositoryUrl } from "@/services/validation/skillflow";
 import { DEMO_MODE } from "@/utils/demo-mode";
 import type { VivaQuestion } from "@/types/report";
 import type { Task } from "@/types/task";
@@ -43,7 +46,10 @@ export function EvaluateDialog({
   const [open, setOpen] = useState(false);
   const [stage, setStage] = useState<Stage>("url");
   const [gitlabUrl, setGitlabUrl] = useState("");
+  const [gitlabBranch, setGitlabBranch] = useState("evaluate");
   const [error, setError] = useState<string | null>(null);
+  const [usedAi, setUsedAi] = useState(false);
+  const [aiDisclosure, setAiDisclosure] = useState("");
 
   const [evaluation, setEvaluation] = useState<CodeEvaluationResult | null>(null);
   const [questions, setQuestions] = useState<string[]>([]);
@@ -55,13 +61,26 @@ export function EvaluateDialog({
 
   const submitDailyReport = useSubmitDailyReport();
   const completeTask = useCompleteTaskAndAdvance();
+  const { data: reports } = useEvaluationReports(userId);
+  const hasSubmittedTaskReport = reports?.some((report) =>
+    report.report_type === "task"
+    && report.roadmap_id === roadmapId
+    && (report.report_payload?.task_id === task.id),
+  ) ?? false;
 
   const changeOpen = (next: boolean) => {
+    if (next && hasSubmittedTaskReport) {
+      toast.info("This task has already been evaluated. Wait for the next task to be assigned before submitting another evaluation.");
+      return;
+    }
     setOpen(next);
     if (!next) {
       setStage("url");
       setGitlabUrl("");
+      setGitlabBranch("evaluate");
       setError(null);
+      setUsedAi(false);
+      setAiDisclosure("");
       setEvaluation(null);
       setQuestions([]);
       setQuestionIndex(0);
@@ -73,16 +92,43 @@ export function EvaluateDialog({
   };
 
   const handleFetchAndReview = async () => {
-    if (!gitlabUrl.trim()) return;
+    if (!roadmapId) {
+      setError("No active roadmap is available for this task. Refresh the page or ask your PM for help.");
+      return;
+    }
+    const validationMessage = validateRepositoryUrl(gitlabUrl);
+    if (validationMessage) {
+      setError(validationMessage);
+      return;
+    }
+    const branchValidationMessage = validateGitBranch(gitlabBranch);
+    if (branchValidationMessage) {
+      setError(branchValidationMessage);
+      return;
+    }
+    const disclosureValidationMessage = validateAiDisclosure(usedAi, aiDisclosure);
+    if (disclosureValidationMessage) {
+      setError(disclosureValidationMessage);
+      return;
+    }
     setError(null);
     setStage("fetching");
     try {
-      const files = await fetchRepoFiles(gitlabUrl, gitlabToken ?? undefined);
+      const files = await fetchRepoFiles(gitlabUrl, gitlabBranch.trim(), gitlabToken ?? undefined);
       setStage("reviewing");
-      const result = await evaluateSubmission(files);
+      const result = await evaluateSubmission(files, {
+        title: task.title,
+        description: task.description ?? "No additional task description was provided.",
+        requirements: task.requirements,
+        acceptanceCriteria: task.acceptance_criteria,
+      });
       setEvaluation(result);
-      const qs = await generateVivaQuestions(result);
+      const qs = (await generateVivaQuestions(result)).slice(0, 2);
       setQuestions(qs);
+      if (qs.length === 0) {
+        await finishUp([], result);
+        return;
+      }
       setStage("qa");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
@@ -90,20 +136,24 @@ export function EvaluateDialog({
     }
   };
 
-  const finishUp = async (items: VivaQuestion[]) => {
-    if (!evaluation) return;
+  const finishUp = async (items: VivaQuestion[], evaluationOverride?: CodeEvaluationResult) => {
+    const evaluationToSubmit = evaluationOverride ?? evaluation;
+    if (!evaluationToSubmit) return;
     setStage("synthesizing");
     try {
-      const synthesis = await synthesizeTaskReport(evaluation, items);
+      const synthesis = await synthesizeTaskReport(evaluationToSubmit, items);
+      const scoreValidationMessage = validateReportScore(synthesis.overallScore);
+      if (scoreValidationMessage) throw new Error(scoreValidationMessage);
 
       await submitDailyReport.mutateAsync({
         userId,
         roadmapId,
         task,
         skillName: weekTheme,
-        evaluation,
+        evaluation: evaluationToSubmit,
         synthesis,
         qaItems: items,
+        aiUsageDisclosure: { usedAi, details: aiDisclosure.trim() },
       });
 
       if (DEMO_MODE) await completeTask.mutateAsync({ userId, taskId: task.id });
@@ -113,12 +163,17 @@ export function EvaluateDialog({
       toast.success("Evaluation report submitted");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to finalize evaluation");
-      setStage("qa");
+      setStage(items.length > 0 ? "qa" : "url");
     }
   };
 
   const handleSubmitAnswer = async () => {
-    if (!currentAnswer.trim()) return;
+    const validationMessage = validateEmployeeAnswer(currentAnswer);
+    if (validationMessage) {
+      setError(validationMessage);
+      return;
+    }
+    setError(null);
 
     if (!awaitingFollowUp) {
       try {
@@ -171,16 +226,43 @@ export function EvaluateDialog({
           {stage === "url" && (
             <div className="space-y-4 py-2">
               <div className="space-y-2">
-                <Label htmlFor="gitlab-url">GitLab repository URL</Label>
+                <Label htmlFor="gitlab-url">Repository URL</Label>
                 <Input
                   id="gitlab-url"
-                  placeholder="https://gitlab.com/your-username/your-project"
+                  placeholder="https://github.com/your-username/your-project"
                   value={gitlabUrl}
                   onChange={(e) => setGitlabUrl(e.target.value)}
                 />
                 <p className="text-xs text-muted-foreground">
-                  For private repos, add a GitLab token in Profile Settings first.
+                  SkillFlow evaluates the <strong>evaluate</strong> branch by default. Public GitHub and GitLab repositories are supported.
                 </p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="gitlab-branch">Branch to evaluate</Label>
+                <Input
+                  id="gitlab-branch"
+                  placeholder="evaluate"
+                  value={gitlabBranch}
+                  onChange={(e) => setGitlabBranch(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2 rounded-lg border border-border/70 p-3">
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="ai-assistance"
+                    checked={usedAi}
+                    onCheckedChange={(checked) => setUsedAi(checked === true)}
+                  />
+                  <Label htmlFor="ai-assistance">I used AI assistance for this task</Label>
+                </div>
+                {usedAi && (
+                  <Textarea
+                    value={aiDisclosure}
+                    onChange={(e) => setAiDisclosure(e.target.value)}
+                    rows={2}
+                    placeholder="Briefly state which tool you used and what it helped with."
+                  />
+                )}
               </div>
               {error && <p className="text-sm text-destructive">{error}</p>}
               <DialogFooter>
@@ -237,6 +319,7 @@ export function EvaluateDialog({
               <p className="text-3xl font-semibold tabular-nums">{finalScore}/100</p>
               <p className="text-sm text-muted-foreground">
                 Your report has been stored and is visible in Reports and the PM dashboard.
+                {!DEMO_MODE && " Your next task will appear after roadmap progression is updated."}
               </p>
               <Button onClick={() => changeOpen(false)}>Close</Button>
             </div>

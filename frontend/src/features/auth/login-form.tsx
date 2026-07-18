@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { z } from "zod";
 
 import { Button } from "@/components/ui/button";
+import { validateInternalRedirectPath } from "@/services/validation/skillflow";
 import {
   Form,
   FormControl,
@@ -29,7 +30,7 @@ type LoginValues = z.infer<typeof loginSchema>;
 export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectTo = searchParams.get("redirect") ?? undefined;
+  const redirectTo = validateInternalRedirectPath(searchParams.get("redirect")) ?? undefined;
 
   const form = useForm<LoginValues>({
     resolver: zodResolver(loginSchema),

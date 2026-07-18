@@ -30,6 +30,7 @@ export interface PmFresherOverview {
   } | null;
   latest_daily_report: {
     overall_score: number | null;
+    needs_human_interaction: boolean;
     report_payload: Record<string, unknown> | null;
     created_at: string;
   } | null;
