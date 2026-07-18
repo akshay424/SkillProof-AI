@@ -15,6 +15,7 @@ export const MOCK_EMPLOYEE: UserProfile = {
   role: "employee",
   supervisor_id: "aaaaaaaa-0000-0000-0000-000000000002",
   job_title: "Flutter Developer Trainee",
+  gitlab_token: null,
   created_at: "2026-05-01T09:00:00Z",
   updated_at: "2026-07-10T09:00:00Z",
 };
@@ -27,6 +28,7 @@ export const MOCK_SUPERVISOR: UserProfile = {
   role: "supervisor",
   supervisor_id: null,
   job_title: "Engineering Team Lead",
+  gitlab_token: null,
   created_at: "2026-03-01T09:00:00Z",
   updated_at: "2026-03-01T09:00:00Z",
 };
@@ -39,6 +41,7 @@ export const MOCK_ADMIN: UserProfile = {
   role: "admin",
   supervisor_id: null,
   job_title: "Platform Administrator",
+  gitlab_token: null,
   created_at: "2026-01-01T09:00:00Z",
   updated_at: "2026-01-01T09:00:00Z",
 };

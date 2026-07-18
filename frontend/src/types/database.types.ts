@@ -23,6 +23,7 @@ export interface Database {
           role: "employee" | "supervisor" | "admin";
           supervisor_id: string | null;
           job_title: string | null;
+          gitlab_token: string | null;
           created_at: string;
           updated_at: string;
         };
