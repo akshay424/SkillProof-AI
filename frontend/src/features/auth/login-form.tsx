@@ -2,7 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2 } from "lucide-react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -28,7 +28,6 @@ const loginSchema = z.object({
 type LoginValues = z.infer<typeof loginSchema>;
 
 export function LoginForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const redirectTo = validateInternalRedirectPath(searchParams.get("redirect")) ?? undefined;
 
@@ -53,9 +52,13 @@ export function LoginForm() {
       return;
     }
 
-    const destination = redirectTo ?? `/${body.user.role}`;
-    router.replace(destination);
-    router.refresh();
+    // Use a full-page navigation instead of router.replace() + router.refresh().
+    // The session cookie was just set by the login route; a soft client-side
+    // navigation races the router cache (which still holds the logged-out
+    // redirect for the dashboard) and can bounce the user back to /login,
+    // making it take several attempts. A hard navigation guarantees the
+    // server layout sees the new cookie on the very first try.
+    window.location.assign(redirectTo ?? `/${body.user.role}`);
   };
 
   return (
