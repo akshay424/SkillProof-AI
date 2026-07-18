@@ -60,6 +60,8 @@ function backendProfileToUserProfile(
     pm_id: null,
     job_title: profile?.target_role ?? (user.role === "fresher" ? "AI Product Developer" : null),
     gitlab_token: null,
+    // Repository details are not persisted by the v2 backend yet.
+    gitlab_repo_url: null,
     resume_text: textFromValue(profile?.resume_summary, "resume_text"),
     interview_notes: textFromValue(profile?.interview_evaluation, "overall"),
     created_at: profile?.created_at ?? now,
