@@ -18,7 +18,7 @@ export function RecentReportsList({ userId, limit = 3 }: { userId: string | unde
     <GlassCard className="p-6">
       <div className="mb-4 flex items-center justify-between">
         <h3 className="font-semibold">Recent Reports</h3>
-        <Link href="/employee/reports" className="text-xs font-medium text-primary hover:underline">
+        <Link href="/fresher/reports" className="text-xs font-medium text-primary hover:underline">
           View all
         </Link>
       </div>

@@ -4,7 +4,7 @@ import { CheckCircle2, CircleDashed, Clock3, Send } from "lucide-react";
 
 import { GlassCard } from "@/components/shared/glass-card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useDirectReports } from "@/services/queries/users";
+import { usePmFreshers } from "@/services/queries/users";
 import { useTasksForUsers } from "@/services/queries/tasks";
 import type { TaskStatus } from "@/types/task";
 
@@ -15,9 +15,9 @@ const STATUS_META: Record<TaskStatus, { label: string; icon: typeof CheckCircle2
   not_started: { label: "Not started", icon: CircleDashed, className: "text-muted-foreground bg-muted" },
 };
 
-export function TaskCompletionStats({ supervisorId }: { supervisorId: string | undefined }) {
-  const { data: employees } = useDirectReports(supervisorId);
-  const { data: tasks, isLoading } = useTasksForUsers(employees?.map((e) => e.id) ?? []);
+export function TaskCompletionStats({ pmId }: { pmId: string | undefined }) {
+  const { data: freshers } = usePmFreshers(pmId);
+  const { data: tasks, isLoading } = useTasksForUsers(freshers?.map((e) => e.id) ?? []);
 
   const counts: Record<TaskStatus, number> = {
     completed: 0,

@@ -1,7 +1,10 @@
+export type ReportType = "task" | "weekly" | "final";
+
 export interface EvaluationReport {
   id: string;
-  submission_id: string;
+  submission_id: string | null;
   user_id: string;
+  report_type: ReportType;
   architecture: Record<string, unknown> | null;
   folder_structure: Record<string, unknown> | null;
   problem_solving: Record<string, unknown> | null;
@@ -9,6 +12,7 @@ export interface EvaluationReport {
   ai_usage: Record<string, unknown> | null;
   evidence: Record<string, unknown> | null;
   suggestions: string[] | null;
+  summary: string | null;
   confidence: number | null;
   overall_score: number | null;
   generated_at: string;
@@ -26,25 +30,9 @@ export interface SkillScore {
   recorded_at: string;
 }
 
-export interface PromptTemplate {
-  id: string;
-  organization_id: string;
-  key: string;
-  name: string;
-  template_body: string;
-  variables: string[];
-  version: number;
-  is_active: boolean;
-  updated_at: string;
-}
-
-export interface AIConfiguration {
-  id: string;
-  organization_id: string;
-  provider: "openai" | "gemini";
-  model_name: string;
-  temperature: number;
-  max_tokens: number;
-  extra_settings: Record<string, unknown>;
-  updated_at: string;
+export interface VivaQuestion {
+  question: string;
+  answer: string | null;
+  followUp: string | null;
+  followUpAnswer: string | null;
 }

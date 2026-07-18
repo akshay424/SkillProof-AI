@@ -6,7 +6,7 @@ import { GlassCard } from "@/components/shared/glass-card";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ListRowsSkeleton } from "@/components/shared/loading-skeletons";
 import { Progress } from "@/components/ui/progress";
-import { useDirectReports } from "@/services/queries/users";
+import { usePmFreshers } from "@/services/queries/users";
 import { useSkillScoresForUsers } from "@/services/queries/skill-scores";
 import type { SkillScore } from "@/types/report";
 
@@ -32,9 +32,9 @@ function weakestSkills(scores: SkillScore[], limit = 4): { skill: string; averag
     .slice(0, limit);
 }
 
-export function WeakSkillsPanel({ supervisorId }: { supervisorId: string | undefined }) {
-  const { data: employees } = useDirectReports(supervisorId);
-  const { data: scores, isLoading } = useSkillScoresForUsers(employees?.map((e) => e.id) ?? []);
+export function WeakSkillsPanel({ pmId }: { pmId: string | undefined }) {
+  const { data: freshers } = usePmFreshers(pmId);
+  const { data: scores, isLoading } = useSkillScoresForUsers(freshers?.map((e) => e.id) ?? []);
   const weakest = scores ? weakestSkills(scores) : [];
 
   return (

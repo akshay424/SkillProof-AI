@@ -6,6 +6,12 @@ type RouteContext = {
   params: Promise<{ path: string[] }>;
 };
 
+const ALLOWED_PATHS = [
+  /^\/api\/auth\/me$/,
+  /^\/api\/freshers\/me(?:\/(?:profile|roadmaps(?:\/.+)?|reports(?:\/.+)?))?$/,
+  /^\/api\/pm(?:\/(?:dashboard|freshers(?:\/.+)?))?$/,
+];
+
 async function forward(request: Request, { params }: RouteContext) {
   const token = request.headers.get("cookie")
     ?.split("; ")
@@ -14,8 +20,12 @@ async function forward(request: Request, { params }: RouteContext) {
   if (!token) return NextResponse.json({ detail: "Authentication required" }, { status: 401 });
 
   const { path } = await params;
+  const upstreamPath = `/${path.join("/")}`;
+  if (!ALLOWED_PATHS.some((pattern) => pattern.test(upstreamPath))) {
+    return NextResponse.json({ detail: "This backend route is not available to the dashboard" }, { status: 403 });
+  }
   const requestUrl = new URL(request.url);
-  const backendUrl = new URL(`/${path.join("/")}`, BACKEND_URL);
+  const backendUrl = new URL(upstreamPath, BACKEND_URL);
   backendUrl.search = requestUrl.search;
 
   const headers = new Headers();

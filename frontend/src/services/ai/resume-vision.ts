@@ -18,9 +18,5 @@ export async function extractResumeTextFromImage(dataUrl: string): Promise<strin
     return DEMO_RESUME_TEXT;
   }
 
-  return completeVision(
-    "You are a resume transcription agent. Transcribe this resume image into clean plain text, including education, skills, projects, and experience. Return only the transcribed text.",
-    "Transcribe the attached resume image.",
-    dataUrl,
-  );
+  return completeVision("Transcribe the attached resume image.", dataUrl);
 }

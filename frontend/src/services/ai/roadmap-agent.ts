@@ -185,6 +185,6 @@ export async function generateRoadmap(resumeText: string, interviewNotes: string
     paceStatus: "no_evidence",
     claimedSkillsAreUnverified: true,
   });
-  const roadmap = await completeJSON<GeneratedRoadmap>(SYSTEM_PROMPT, user);
+  const roadmap = await completeJSON<GeneratedRoadmap>("roadmap_creator", user, SYSTEM_PROMPT);
   return { ...roadmap, resumeAnalysis: resume };
 }

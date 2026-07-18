@@ -6,7 +6,7 @@ import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "rec
 import { GlassCard } from "@/components/shared/glass-card";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useDirectReports } from "@/services/queries/users";
+import { usePmFreshers } from "@/services/queries/users";
 import { useSkillScoresForUsers } from "@/services/queries/skill-scores";
 import { formatDate } from "@/utils/format-date";
 import type { SkillScore } from "@/types/report";
@@ -22,9 +22,9 @@ function trendSeries(scores: SkillScore[]): { date: string; average: number }[] 
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
-export function ReadinessTrendChart({ supervisorId }: { supervisorId: string | undefined }) {
-  const { data: employees } = useDirectReports(supervisorId);
-  const { data: scores, isLoading } = useSkillScoresForUsers(employees?.map((e) => e.id) ?? []);
+export function ReadinessTrendChart({ pmId }: { pmId: string | undefined }) {
+  const { data: freshers } = usePmFreshers(pmId);
+  const { data: scores, isLoading } = useSkillScoresForUsers(freshers?.map((e) => e.id) ?? []);
   const series = scores ? trendSeries(scores) : [];
   const growth =
     series.length >= 2 ? series[series.length - 1].average - series[0].average : null;

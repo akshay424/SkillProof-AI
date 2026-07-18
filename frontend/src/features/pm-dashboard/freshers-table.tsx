@@ -16,7 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useDirectReports } from "@/services/queries/users";
+import { usePmFreshers } from "@/services/queries/users";
 import { useSkillScoresForUsers } from "@/services/queries/skill-scores";
 
 function initials(name: string | null) {
@@ -33,45 +33,45 @@ function averageForUser(userId: string, scores: { user_id: string; skill_name: s
   return values.length ? Math.round(values.reduce((a, b) => a + b, 0) / values.length) : null;
 }
 
-export function EmployeesTable({ supervisorId }: { supervisorId: string | undefined }) {
-  const { data: employees, isLoading } = useDirectReports(supervisorId);
-  const { data: scores } = useSkillScoresForUsers(employees?.map((e) => e.id) ?? []);
+export function FreshersTable({ pmId }: { pmId: string | undefined }) {
+  const { data: freshers, isLoading } = usePmFreshers(pmId);
+  const { data: scores } = useSkillScoresForUsers(freshers?.map((f) => f.id) ?? []);
 
   return (
     <GlassCard className="p-6">
-      <h3 className="mb-4 font-semibold">Employees</h3>
+      <h3 className="mb-4 font-semibold">Freshers</h3>
       {isLoading ? (
         <TableSkeleton />
-      ) : !employees || employees.length === 0 ? (
-        <EmptyState icon={UsersRound} title="No employees assigned yet" />
+      ) : !freshers || freshers.length === 0 ? (
+        <EmptyState icon={UsersRound} title="No freshers assigned yet" />
       ) : (
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Employee</TableHead>
+              <TableHead>Fresher</TableHead>
               <TableHead>Role</TableHead>
               <TableHead>Readiness</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {employees.map((employee) => {
-              const average = scores ? averageForUser(employee.id, scores) : null;
+            {freshers.map((fresher) => {
+              const average = scores ? averageForUser(fresher.id, scores) : null;
               return (
-                <TableRow key={employee.id}>
+                <TableRow key={fresher.id}>
                   <TableCell>
                     <Link
-                      href={`/supervisor/employees/${employee.id}`}
+                      href={`/pm/freshers/${fresher.id}`}
                       className="flex items-center gap-3 hover:underline"
                     >
                       <Avatar className="h-8 w-8">
-                        <AvatarImage src={employee.avatar_url ?? undefined} />
-                        <AvatarFallback>{initials(employee.full_name)}</AvatarFallback>
+                        <AvatarImage src={fresher.avatar_url ?? undefined} />
+                        <AvatarFallback>{initials(fresher.full_name)}</AvatarFallback>
                       </Avatar>
-                      <span className="font-medium">{employee.full_name}</span>
+                      <span className="font-medium">{fresher.full_name}</span>
                     </Link>
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {employee.job_title ?? "—"}
+                    {fresher.job_title ?? "—"}
                   </TableCell>
                   <TableCell>
                     {average !== null ? (

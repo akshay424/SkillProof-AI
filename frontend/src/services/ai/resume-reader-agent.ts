@@ -196,7 +196,7 @@ export async function readResume(
     };
   }
 
-  return completeJSON<ResumeReaderResult>(SYSTEM_PROMPT, JSON.stringify({
+  return completeJSON<ResumeReaderResult>("resume_reader", JSON.stringify({
     employee_id: context.employeeId ?? "",
     employee_name: context.employeeName ?? "",
     department: context.department ?? "",
@@ -205,5 +205,5 @@ export async function readResume(
     experience_years: context.experienceYears ?? null,
     resume_text: resumeText,
     manual_fallback_data: context.manualFallbackData ?? "",
-  }));
+  }), SYSTEM_PROMPT);
 }
