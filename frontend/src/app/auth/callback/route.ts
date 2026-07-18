@@ -30,7 +30,7 @@ export async function GET(request: Request) {
     .eq("id", data.user.id)
     .single();
 
-  const role = profile?.role as UserRole | undefined;
+  const role = (profile as { role: UserRole } | null)?.role;
   const destination = role ? ROLE_HOME_PATH[role] : "/login";
   return NextResponse.redirect(`${origin}${destination}`);
 }

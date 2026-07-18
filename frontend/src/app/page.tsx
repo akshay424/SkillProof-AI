@@ -2,10 +2,11 @@ import { redirect } from "next/navigation";
 
 import { createClient } from "@/services/supabase/server";
 import { DEMO_MODE } from "@/utils/demo-mode";
+import type { UserRole } from "@/types/user";
 
 export default async function RootPage() {
   if (DEMO_MODE) {
-    redirect("/employee");
+    redirect("/fresher");
   }
 
   const supabase = await createClient();
@@ -23,5 +24,6 @@ export default async function RootPage() {
     .eq("id", user.id)
     .single();
 
-  redirect(profile ? `/${profile.role}` : "/login");
+  const role = (profile as { role: UserRole } | null)?.role;
+  redirect(role ? `/${role}` : "/login");
 }

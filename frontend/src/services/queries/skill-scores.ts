@@ -1,6 +1,6 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { MOCK_EMPLOYEE, MOCK_SKILL_SCORES } from "@/mocks/fixtures";
+import { demoId, demoStore } from "@/mocks/demo-store";
 import { createClient } from "@/services/supabase/client";
 import { DEMO_MODE } from "@/utils/demo-mode";
 import type { SkillScore } from "@/types/report";
@@ -10,7 +10,11 @@ export function useSkillScores(userId: string | undefined) {
     queryKey: ["skill-scores", userId],
     enabled: DEMO_MODE || !!userId,
     queryFn: async (): Promise<SkillScore[]> => {
-      if (DEMO_MODE) return userId === MOCK_EMPLOYEE.id ? MOCK_SKILL_SCORES : [];
+      if (DEMO_MODE) {
+        return demoStore.skillScores
+          .filter((s) => s.user_id === userId)
+          .sort((a, b) => b.recorded_at.localeCompare(a.recorded_at));
+      }
 
       const supabase = createClient();
       const { data, error } = await supabase
@@ -40,7 +44,7 @@ export function useSkillScoresForUsers(userIds: string[]) {
     queryKey: ["skill-scores-batch", userIds],
     enabled: DEMO_MODE || userIds.length > 0,
     queryFn: async (): Promise<SkillScore[]> => {
-      if (DEMO_MODE) return userIds.includes(MOCK_EMPLOYEE.id) ? MOCK_SKILL_SCORES : [];
+      if (DEMO_MODE) return demoStore.skillScores.filter((s) => userIds.includes(s.user_id));
 
       const supabase = createClient();
       const { data, error } = await supabase
@@ -50,6 +54,35 @@ export function useSkillScoresForUsers(userIds: string[]) {
         .order("recorded_at", { ascending: false });
       if (error) throw error;
       return data as SkillScore[];
+    },
+  });
+}
+
+/** Demo-mode only for now (writes to the in-memory demoStore) — real Supabase persistence is a later phase. */
+export function useRecordSkillScores() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: { userId: string; scores: { skillName: string; score: number }[]; source: SkillScore["source"] }) => {
+      const rows: SkillScore[] = input.scores.map((s) => ({
+        id: demoId("skill"),
+        user_id: input.userId,
+        skill_name: s.skillName,
+        score: s.score,
+        source: input.source,
+        recorded_at: new Date().toISOString(),
+      }));
+      demoStore.skillScores.push(...rows);
+      return input.userId;
+    },
+    onSuccess: (userId) => {
+      queryClient.setQueryData(
+        ["skill-scores", userId],
+        demoStore.skillScores
+          .filter((s) => s.user_id === userId)
+          .sort((a, b) => b.recorded_at.localeCompare(a.recorded_at)),
+      );
+      queryClient.invalidateQueries({ queryKey: ["skill-scores-batch"], refetchType: "all" });
     },
   });
 }

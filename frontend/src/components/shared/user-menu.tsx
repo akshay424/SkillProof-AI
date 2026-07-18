@@ -69,11 +69,13 @@ export function UserMenu() {
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem asChild>
-          <Link href="/employee/settings/profile">
-            <Settings className="mr-2 h-4 w-4" /> Profile settings
-          </Link>
-        </DropdownMenuItem>
+        {user.profile.role === "fresher" && (
+          <DropdownMenuItem asChild>
+            <Link href="/fresher/settings/profile">
+              <Settings className="mr-2 h-4 w-4" /> Profile settings
+            </Link>
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem disabled>
           <UserRound className="mr-2 h-4 w-4" /> {user.email}
         </DropdownMenuItem>

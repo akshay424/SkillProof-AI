@@ -1,16 +1,22 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { MOCK_EMPLOYEE, MOCK_TASKS } from "@/mocks/fixtures";
+import { demoStore } from "@/mocks/demo-store";
 import { createClient } from "@/services/supabase/client";
 import { DEMO_MODE } from "@/utils/demo-mode";
 import type { Task } from "@/types/task";
+
+export function demoTasksForUser(userId: string): Task[] {
+  const roadmapIds = demoStore.roadmaps.filter((r) => r.user_id === userId).map((r) => r.id);
+  const weekIds = demoStore.roadmapWeeks.filter((w) => roadmapIds.includes(w.roadmap_id)).map((w) => w.id);
+  return demoStore.tasks.filter((t) => weekIds.includes(t.roadmap_week_id));
+}
 
 export function useTasksForUser(userId: string | undefined) {
   return useQuery({
     queryKey: ["tasks-for-user", userId],
     enabled: DEMO_MODE || !!userId,
     queryFn: async (): Promise<Task[]> => {
-      if (DEMO_MODE) return userId === MOCK_EMPLOYEE.id ? MOCK_TASKS : [];
+      if (DEMO_MODE) return userId ? demoTasksForUser(userId) : [];
 
       const supabase = createClient();
       const { data, error } = await supabase
@@ -43,12 +49,14 @@ export function useTasksForUsers(userIds: string[]) {
     enabled: DEMO_MODE || userIds.length > 0,
     queryFn: async (): Promise<TaskWithOwner[]> => {
       if (DEMO_MODE) {
-        return userIds.includes(MOCK_EMPLOYEE.id)
-          ? MOCK_TASKS.map((t) => ({
-              ...t,
-              roadmap_weeks: { roadmap_id: "wk", roadmaps: { user_id: MOCK_EMPLOYEE.id } },
-            }))
-          : [];
+        return userIds.flatMap((userId) => {
+          const roadmap = demoStore.roadmaps.find((r) => r.user_id === userId);
+          if (!roadmap) return [];
+          return demoTasksForUser(userId).map((t) => ({
+            ...t,
+            roadmap_weeks: { roadmap_id: roadmap.id, roadmaps: { user_id: userId } },
+          }));
+        });
       }
 
       const supabase = createClient();

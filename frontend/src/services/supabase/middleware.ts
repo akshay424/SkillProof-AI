@@ -1,19 +1,17 @@
-import { createServerClient } from "@supabase/ssr";
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 import type { Database } from "@/types/database.types";
 import type { UserRole } from "@/types/user";
 
 const ROLE_HOME: Record<UserRole, string> = {
-  employee: "/employee",
-  supervisor: "/supervisor",
-  admin: "/admin",
+  fresher: "/fresher",
+  pm: "/pm",
 };
 
 function roleForPath(pathname: string): UserRole | null {
-  if (pathname.startsWith("/employee")) return "employee";
-  if (pathname.startsWith("/supervisor")) return "supervisor";
-  if (pathname.startsWith("/admin")) return "admin";
+  if (pathname.startsWith("/fresher")) return "fresher";
+  if (pathname.startsWith("/pm")) return "pm";
   return null;
 }
 
@@ -28,7 +26,7 @@ export async function updateSession(request: NextRequest) {
         getAll() {
           return request.cookies.getAll();
         },
-        setAll(cookiesToSet) {
+        setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
           response = NextResponse.next({ request });
           cookiesToSet.forEach(({ name, value, options }) =>
@@ -66,7 +64,7 @@ export async function updateSession(request: NextRequest) {
       .eq("id", user.id)
       .single();
 
-    const role = profile?.role as UserRole | undefined;
+    const role = (profile as { role: UserRole } | null)?.role;
     if (role) {
       return NextResponse.redirect(new URL(ROLE_HOME[role], request.url));
     }
@@ -79,10 +77,9 @@ export async function updateSession(request: NextRequest) {
       .eq("id", user.id)
       .single();
 
-    const role = profile?.role as UserRole | undefined;
-    const allowed = role === requiredRole || (requiredRole === "supervisor" && role === "admin");
+    const role = (profile as { role: UserRole } | null)?.role;
 
-    if (!allowed) {
+    if (role !== requiredRole) {
       return NextResponse.redirect(new URL("/unauthorized", request.url));
     }
   }

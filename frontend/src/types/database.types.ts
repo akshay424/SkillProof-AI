@@ -1,5 +1,7 @@
-// Hand-authored to match supabase/migrations/0001_init_schema.sql.
-// Regenerate with `supabase gen types typescript` once a real project exists.
+// Hand-authored, not backed by real migrations yet (no Supabase project wired
+// up in this pass — the app runs entirely on demo-mode fixtures). Kept in
+// sync with the shape services/queries/* code assumes so real Supabase
+// integration can be dropped in later without touching call sites.
 
 export interface Database {
   public: {
@@ -20,35 +22,22 @@ export interface Database {
           organization_id: string | null;
           full_name: string | null;
           avatar_url: string | null;
-          role: "employee" | "supervisor" | "admin";
-          supervisor_id: string | null;
+          role: "fresher" | "pm";
+          pm_id: string | null;
           job_title: string | null;
           gitlab_token: string | null;
+          resume_text: string | null;
+          interview_notes: string | null;
           created_at: string;
           updated_at: string;
         };
         Insert: Partial<Database["public"]["Tables"]["user_profiles"]["Row"]>;
         Update: Partial<Database["public"]["Tables"]["user_profiles"]["Row"]>;
       };
-      learning_paths: {
-        Row: {
-          id: string;
-          organization_id: string;
-          name: string;
-          description: string | null;
-          is_active: boolean;
-          created_by: string | null;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: Partial<Database["public"]["Tables"]["learning_paths"]["Row"]>;
-        Update: Partial<Database["public"]["Tables"]["learning_paths"]["Row"]>;
-      };
       roadmaps: {
         Row: {
           id: string;
           user_id: string;
-          learning_path_id: string | null;
           title: string;
           total_weeks: number;
           status: "not_started" | "in_progress" | "completed";
@@ -116,8 +105,9 @@ export interface Database {
       evaluation_reports: {
         Row: {
           id: string;
-          submission_id: string;
+          submission_id: string | null;
           user_id: string;
+          report_type: "task" | "weekly" | "final";
           architecture: Record<string, unknown> | null;
           folder_structure: Record<string, unknown> | null;
           problem_solving: Record<string, unknown> | null;
@@ -125,6 +115,7 @@ export interface Database {
           ai_usage: Record<string, unknown> | null;
           evidence: Record<string, unknown> | null;
           suggestions: string[] | null;
+          summary: string | null;
           confidence: number | null;
           overall_score: number | null;
           raw_report: Record<string, unknown> | null;
@@ -132,6 +123,43 @@ export interface Database {
         };
         Insert: Partial<Database["public"]["Tables"]["evaluation_reports"]["Row"]>;
         Update: Partial<Database["public"]["Tables"]["evaluation_reports"]["Row"]>;
+      };
+      viva_sessions: {
+        Row: {
+          id: string;
+          submission_id: string;
+          user_id: string;
+          status: "scheduled" | "in_progress" | "completed";
+          started_at: string | null;
+          ended_at: string | null;
+          overall_communication_score: number | null;
+        };
+        Insert: Partial<Database["public"]["Tables"]["viva_sessions"]["Row"]>;
+        Update: Partial<Database["public"]["Tables"]["viva_sessions"]["Row"]>;
+      };
+      viva_questions: {
+        Row: {
+          id: string;
+          viva_session_id: string;
+          sequence_number: number;
+          question_text: string;
+          source_reference: Record<string, unknown> | null;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["viva_questions"]["Row"]>;
+        Update: Partial<Database["public"]["Tables"]["viva_questions"]["Row"]>;
+      };
+      viva_answers: {
+        Row: {
+          id: string;
+          viva_question_id: string;
+          answer_text: string | null;
+          follow_up_generated: boolean;
+          ai_feedback: Record<string, unknown> | null;
+          answered_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["viva_answers"]["Row"]>;
+        Update: Partial<Database["public"]["Tables"]["viva_answers"]["Row"]>;
       };
       skill_scores: {
         Row: {
@@ -144,36 +172,6 @@ export interface Database {
         };
         Insert: Partial<Database["public"]["Tables"]["skill_scores"]["Row"]>;
         Update: Partial<Database["public"]["Tables"]["skill_scores"]["Row"]>;
-      };
-      prompt_templates: {
-        Row: {
-          id: string;
-          organization_id: string;
-          key: string;
-          name: string;
-          template_body: string;
-          variables: string[];
-          version: number;
-          is_active: boolean;
-          updated_by: string | null;
-          updated_at: string;
-        };
-        Insert: Partial<Database["public"]["Tables"]["prompt_templates"]["Row"]>;
-        Update: Partial<Database["public"]["Tables"]["prompt_templates"]["Row"]>;
-      };
-      ai_configuration: {
-        Row: {
-          id: string;
-          organization_id: string;
-          provider: "openai" | "gemini";
-          model_name: string;
-          temperature: number;
-          max_tokens: number;
-          extra_settings: Record<string, unknown>;
-          updated_at: string;
-        };
-        Insert: Partial<Database["public"]["Tables"]["ai_configuration"]["Row"]>;
-        Update: Partial<Database["public"]["Tables"]["ai_configuration"]["Row"]>;
       };
     };
   };

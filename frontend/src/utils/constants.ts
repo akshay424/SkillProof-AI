@@ -1,15 +1,13 @@
 import type { UserRole } from "@/types/user";
 
 export const ROLE_LABELS: Record<UserRole, string> = {
-  employee: "Employee",
-  supervisor: "Supervisor",
-  admin: "Admin",
+  fresher: "Fresher",
+  pm: "PM",
 };
 
 export const ROLE_HOME_PATH: Record<UserRole, string> = {
-  employee: "/employee",
-  supervisor: "/supervisor",
-  admin: "/admin",
+  fresher: "/fresher",
+  pm: "/pm",
 };
 
 export const SKILL_SCORE_BANDS = [

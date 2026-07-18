@@ -1,15 +1,15 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { usePathname } from "next/navigation";
 
-import { MOCK_ADMIN, MOCK_EMPLOYEE, MOCK_ORG_MEMBERS, MOCK_SUPERVISOR } from "@/mocks/fixtures";
+import { demoStore } from "@/mocks/demo-store";
+import { MOCK_FRESHER, MOCK_PM } from "@/mocks/fixtures";
 import { createClient } from "@/services/supabase/client";
 import { DEMO_MODE } from "@/utils/demo-mode";
 import type { UserProfile } from "@/types/user";
 
 function demoPersonaForPath(pathname: string): UserProfile {
-  if (pathname.startsWith("/admin")) return MOCK_ADMIN;
-  if (pathname.startsWith("/supervisor")) return MOCK_SUPERVISOR;
-  return MOCK_EMPLOYEE;
+  const persona = pathname.startsWith("/pm") ? MOCK_PM : MOCK_FRESHER;
+  return demoStore.users.find((u) => u.id === persona.id) ?? persona;
 }
 
 export function useCurrentUser() {
@@ -46,7 +46,7 @@ export function useOrgMembers(organizationId: string | undefined) {
     queryKey: ["org-members", organizationId],
     enabled: DEMO_MODE || !!organizationId,
     queryFn: async (): Promise<UserProfile[]> => {
-      if (DEMO_MODE) return MOCK_ORG_MEMBERS;
+      if (DEMO_MODE) return demoStore.users;
 
       const supabase = createClient();
       const { data, error } = await supabase
@@ -60,18 +60,39 @@ export function useOrgMembers(organizationId: string | undefined) {
   });
 }
 
-export function useDirectReports(supervisorId: string | undefined) {
+export function usePmFreshers(pmId: string | undefined) {
   return useQuery({
-    queryKey: ["direct-reports", supervisorId],
-    enabled: DEMO_MODE || !!supervisorId,
+    queryKey: ["pm-freshers", pmId],
+    enabled: DEMO_MODE || !!pmId,
     queryFn: async (): Promise<UserProfile[]> => {
-      if (DEMO_MODE) return supervisorId === MOCK_SUPERVISOR.id ? [MOCK_EMPLOYEE] : [];
+      if (DEMO_MODE) return demoStore.users.filter((u) => u.role === "fresher" && u.pm_id === pmId);
 
       const supabase = createClient();
       const { data, error } = await supabase
         .from("user_profiles")
         .select("*")
-        .eq("supervisor_id", supervisorId!)
+        .eq("pm_id", pmId!)
+        .order("full_name");
+      if (error) throw error;
+      return data as UserProfile[];
+    },
+  });
+}
+
+export function useUnassignedFreshers(organizationId: string | undefined) {
+  return useQuery({
+    queryKey: ["unassigned-freshers", organizationId],
+    enabled: DEMO_MODE || !!organizationId,
+    queryFn: async (): Promise<UserProfile[]> => {
+      if (DEMO_MODE) return demoStore.users.filter((u) => u.role === "fresher" && !u.pm_id);
+
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("user_profiles")
+        .select("*")
+        .eq("organization_id", organizationId!)
+        .eq("role", "fresher")
+        .is("pm_id", null)
         .order("full_name");
       if (error) throw error;
       return data as UserProfile[];
@@ -84,7 +105,7 @@ export function useUserProfileById(id: string | undefined) {
     queryKey: ["user-profile", id],
     enabled: DEMO_MODE || !!id,
     queryFn: async (): Promise<UserProfile | null> => {
-      if (DEMO_MODE) return MOCK_ORG_MEMBERS.find((m) => m.id === id) ?? null;
+      if (DEMO_MODE) return demoStore.users.find((m) => m.id === id) ?? null;
 
       const supabase = createClient();
       const { data, error } = await supabase
@@ -98,24 +119,40 @@ export function useUserProfileById(id: string | undefined) {
   });
 }
 
+function invalidateProfileQueries(queryClient: ReturnType<typeof useQueryClient>) {
+  queryClient.invalidateQueries({ queryKey: ["current-user"], refetchType: "all" });
+  queryClient.invalidateQueries({ queryKey: ["org-members"], refetchType: "all" });
+  queryClient.invalidateQueries({ queryKey: ["pm-freshers"], refetchType: "all" });
+  queryClient.invalidateQueries({ queryKey: ["unassigned-freshers"], refetchType: "all" });
+  queryClient.invalidateQueries({ queryKey: ["user-profile"], refetchType: "all" });
+}
+
+/** Demo-mode only for now (mutates the in-memory demoStore) — real Supabase persistence is a later phase. */
 export function useUpdateUserProfile() {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async (input: { id: string; updates: Partial<UserProfile> }) => {
-      if (DEMO_MODE) return;
+      const idx = demoStore.users.findIndex((u) => u.id === input.id);
+      if (idx !== -1) {
+        demoStore.users[idx] = { ...demoStore.users[idx], ...input.updates };
+      }
+    },
+    onSuccess: () => invalidateProfileQueries(queryClient),
+  });
+}
 
-      const supabase = createClient();
-      const { error } = await supabase
-        .from("user_profiles")
-        .update(input.updates)
-        .eq("id", input.id);
-      if (error) throw error;
+/** Demo-mode only for now (mutates the in-memory demoStore) — real Supabase persistence is a later phase. */
+export function useClaimFresher() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: { fresherId: string; pmId: string }) => {
+      const idx = demoStore.users.findIndex((u) => u.id === input.fresherId);
+      if (idx !== -1) {
+        demoStore.users[idx] = { ...demoStore.users[idx], pm_id: input.pmId };
+      }
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["current-user"] });
-      queryClient.invalidateQueries({ queryKey: ["org-members"] });
-      queryClient.invalidateQueries({ queryKey: ["direct-reports"] });
-    },
+    onSuccess: () => invalidateProfileQueries(queryClient),
   });
 }
