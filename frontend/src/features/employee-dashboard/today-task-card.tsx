@@ -23,9 +23,14 @@ export function TodayTaskCard({ userId }: { userId: string | undefined }) {
     <GlassCard className="flex h-full flex-col p-6">
       <div className="mb-4 flex items-center justify-between">
         <h3 className="font-semibold">Today&apos;s Task</h3>
-        <Link href="/employee/roadmap" className="text-xs font-medium text-primary hover:underline">
-          View roadmap
-        </Link>
+        <div className="flex items-center gap-4">
+          <Link href="/employee/roadmap" className="text-xs font-medium text-primary hover:underline">
+            View roadmap
+          </Link>
+          <Link href="/employee/reports" className="text-xs font-medium text-primary hover:underline">
+            Evaluation
+          </Link>
+        </div>
       </div>
 
       {isLoading ? (
