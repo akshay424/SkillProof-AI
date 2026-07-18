@@ -47,6 +47,11 @@ function textFromValue(value: unknown, preferredKey?: string): string | null {
   return null;
 }
 
+function metadataString(metadata: Record<string, unknown> | null | undefined, key: string): string | null {
+  const value = metadata?.[key];
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
 function backendProfileToUserProfile(
   user: { id: string; name: string; role: UserProfile["role"] },
   profile?: BackendFresherProfile | null,
@@ -60,9 +65,10 @@ function backendProfileToUserProfile(
     role: user.role,
     pm_id: null,
     job_title: profile?.target_role ?? (user.role === "fresher" ? "AI Product Developer" : null),
-    gitlab_token: null,
-    // Repository details are not persisted by the v2 backend yet.
-    gitlab_repo_url: null,
+    // Repository details live inside the profile's free-form profile_metadata
+    // JSON — the v2 backend has no dedicated columns for them.
+    gitlab_token: metadataString(profile?.profile_metadata, "gitlab_token"),
+    gitlab_repo_url: metadataString(profile?.profile_metadata, "gitlab_repo_url"),
     resume_text: textFromValue(profile?.resume_summary, "resume_text"),
     interview_notes: textFromValue(profile?.interview_evaluation, "overall"),
     created_at: profile?.created_at ?? now,
@@ -192,13 +198,39 @@ export function useUpdateUserProfile() {
       interviewEvaluation?: unknown;
     }) => {
       if (!DEMO_MODE) {
+        // Only send the fields actually being changed so a profile-settings
+        // save can't null out the stored resume/interview evaluation and a
+        // roadmap-generation save can't reset a custom target role.
+        const body: Record<string, unknown> = {};
+        if (input.updates.job_title !== undefined) {
+          body.target_role = input.updates.job_title ?? "AI Product Developer";
+        }
+        if (input.resumeSummary !== undefined || input.updates.resume_text !== undefined) {
+          body.resume_summary = input.resumeSummary
+            ?? (input.updates.resume_text ? { resume_text: input.updates.resume_text } : null);
+        }
+        if (input.interviewEvaluation !== undefined || input.updates.interview_notes !== undefined) {
+          body.interview_evaluation = input.interviewEvaluation
+            ?? (input.updates.interview_notes ? { overall: input.updates.interview_notes } : null);
+        }
+        if (input.updates.gitlab_token !== undefined || input.updates.gitlab_repo_url !== undefined) {
+          // The backend replaces profile_metadata wholesale (no deep merge),
+          // so always send the full object merged with the current values.
+          const cached = queryClient.getQueryData<{ profile: UserProfile } | null>(["current-user"]);
+          const current = cached?.profile;
+          body.profile_metadata = {
+            gitlab_token: input.updates.gitlab_token !== undefined
+              ? input.updates.gitlab_token
+              : current?.gitlab_token ?? null,
+            gitlab_repo_url: input.updates.gitlab_repo_url !== undefined
+              ? input.updates.gitlab_repo_url
+              : current?.gitlab_repo_url ?? null,
+          };
+        }
+
         await apiFetch("/api/freshers/me/profile", {
           method: "PATCH",
-          body: JSON.stringify({
-            target_role: input.updates.job_title ?? "AI Product Developer",
-            resume_summary: input.resumeSummary ?? (input.updates.resume_text ? { resume_text: input.updates.resume_text } : null),
-            interview_evaluation: input.interviewEvaluation ?? (input.updates.interview_notes ? { overall: input.updates.interview_notes } : null),
-          }),
+          body: JSON.stringify(body),
         });
         return;
       }

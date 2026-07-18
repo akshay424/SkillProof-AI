@@ -36,16 +36,18 @@ export function EvaluateDialog({
   task,
   weekTheme,
   gitlabToken,
+  gitlabRepoUrl,
 }: {
   userId: string;
   roadmapId: string;
   task: Task;
   weekTheme: string;
   gitlabToken: string | null;
+  gitlabRepoUrl: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const [stage, setStage] = useState<Stage>("url");
-  const [gitlabUrl, setGitlabUrl] = useState("");
+  const [gitlabUrl, setGitlabUrl] = useState(gitlabRepoUrl ?? "");
   const [gitlabBranch, setGitlabBranch] = useState("evaluate");
   const [error, setError] = useState<string | null>(null);
   const [usedAi, setUsedAi] = useState(false);
@@ -76,7 +78,7 @@ export function EvaluateDialog({
     setOpen(next);
     if (!next) {
       setStage("url");
-      setGitlabUrl("");
+      setGitlabUrl(gitlabRepoUrl ?? "");
       setGitlabBranch("evaluate");
       setError(null);
       setUsedAi(false);
