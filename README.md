@@ -71,9 +71,9 @@ entirely:
 - **Fresher**: http://localhost:3000/fresher
 - **PM**: http://localhost:3000/pm
 
-The demo fresher already has a resume + interview notes filled in, so you can
-go straight to **Generate My Roadmap with AI** on first load. Click
-**Evaluate** on the active task to walk through the full fetch → AI code
+The demo fresher starts with no resume or interview notes — drop a resume
+(PDF/JPG/PNG) and type interview notes to enable **Generate My Roadmap with
+AI**. Click **Evaluate** on the active task to walk through the full fetch → AI code
 review → viva Q&A → final score flow. In demo mode these use canned
 responses — no real OpenAI/GitLab calls are made, so it works with zero API
 keys.

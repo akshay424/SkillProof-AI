@@ -71,6 +71,7 @@ export function TodayTaskCard({ userId }: { userId: string | undefined }) {
                 task={task}
                 weekTheme={week?.theme ?? "General"}
                 gitlabToken={user?.profile.gitlab_token ?? null}
+                gitlabRepoUrl={user?.profile.gitlab_repo_url ?? null}
               />
             )}
           </div>

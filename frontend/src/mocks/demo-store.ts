@@ -10,12 +10,13 @@ import type { UserProfile } from "@/types/user";
  * feels real for the session, without any backend. Resets on page reload —
  * there is no persistence layer in this pass by design.
  *
- * Everything but `users` starts empty on purpose: the demo fresher (Aarav)
- * already has a resume + interview notes filled in (see fixtures.ts) so the
- * onboarding card can jump straight to "Generate Roadmap" — the rest of the
- * dashboard (roadmap, tasks, reports, skill scores) populates live as you
- * click through Generate Roadmap -> Evaluate -> Weekly/Final report, which
- * tells the full story instead of starting pre-filled.
+ * Everything starts empty on purpose: the demo fresher (Aarav) has no resume
+ * or interview notes filled in (see fixtures.ts), so the onboarding card's
+ * "Generate My Roadmap with AI" button stays disabled until you actually
+ * upload a resume and type notes — the rest of the dashboard (roadmap,
+ * tasks, reports, skill scores) populates live as you click through Generate
+ * Roadmap -> Evaluate -> Weekly/Final report, which tells the full story
+ * instead of starting pre-filled.
  */
 export const demoStore: {
   users: UserProfile[];

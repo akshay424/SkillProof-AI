@@ -32,15 +32,17 @@ export function EvaluateDialog({
   task,
   weekTheme,
   gitlabToken,
+  gitlabRepoUrl,
 }: {
   userId: string;
   task: Task;
   weekTheme: string;
   gitlabToken: string | null;
+  gitlabRepoUrl: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const [stage, setStage] = useState<Stage>("url");
-  const [gitlabUrl, setGitlabUrl] = useState("");
+  const [gitlabUrl, setGitlabUrl] = useState(gitlabRepoUrl ?? "");
   const [error, setError] = useState<string | null>(null);
 
   const [evaluation, setEvaluation] = useState<CodeEvaluationResult | null>(null);
@@ -59,7 +61,7 @@ export function EvaluateDialog({
     setOpen(next);
     if (!next) {
       setStage("url");
-      setGitlabUrl("");
+      setGitlabUrl(gitlabRepoUrl ?? "");
       setError(null);
       setEvaluation(null);
       setQuestions([]);

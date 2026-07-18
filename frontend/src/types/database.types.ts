@@ -26,6 +26,7 @@ export interface Database {
           pm_id: string | null;
           job_title: string | null;
           gitlab_token: string | null;
+          gitlab_repo_url: string | null;
           resume_text: string | null;
           interview_notes: string | null;
           created_at: string;
